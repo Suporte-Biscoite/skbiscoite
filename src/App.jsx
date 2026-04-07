@@ -5,11 +5,9 @@ function App() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
 
-  // Função que recebe a lista crua de códigos e encontra os "buracos"
   const processarCodigos = (codigosBrutos) => {
     const grupos = {};
 
-    // 1. Agrupar códigos pelos 4 primeiros dígitos (prefixo)
     codigosBrutos.forEach(codigo => {
       if (codigo.length === 7) {
         const prefixo = codigo.substring(0, 4);
@@ -24,9 +22,7 @@ function App() {
 
     const resultadoFinal = [];
 
-    // 2. Encontrar os números faltando em cada grupo
     for (const prefixo in grupos) {
-      // Ordena os finais do menor para o maior
       const sufixos = grupos[prefixo].sort((a, b) => a - b);
       const gaps = [];
 
@@ -34,10 +30,8 @@ function App() {
         const minimo = sufixos[0];
         const maximo = sufixos[sufixos.length - 1];
 
-        // Varre do menor até o maior número procurando quem não está na lista
         for (let i = minimo + 1; i < maximo; i++) {
           if (!sufixos.includes(i)) {
-            // Se achou um gap, formata com zeros à esquerda (ex: de 5 vira 005)
             const gapFormatado = String(i).padStart(3, '0');
             gaps.push(`${prefixo}${gapFormatado}`);
           }
@@ -51,7 +45,6 @@ function App() {
       });
     }
 
-    // Ordena a tela para o menor prefixo aparecer primeiro
     resultadoFinal.sort((a, b) => a.prefixo.localeCompare(b.prefixo));
     setDadosGaps(resultadoFinal);
   };
@@ -60,7 +53,6 @@ function App() {
     setCarregando(true);
     setErro(null);
     try {
-      // Bate no back-end da Vercel
       const resposta = await fetch('/api/codigos'); 
       
       if (!resposta.ok) {
@@ -78,59 +70,85 @@ function App() {
   };
 
   return (
-    <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>Validador de SKUs</h1>
-      <p>Clique no botão abaixo para buscar os códigos em uso no Omie e identificar numerações livres.</p>
-
-      {/* Botão que controla a requisição */}
-      <button 
-        onClick={buscarDoOmie} 
-        disabled={carregando}
-        style={{
-          padding: '12px 24px',
-          backgroundColor: carregando ? '#ccc' : '#0070f3',
-          color: carregando ? '#666' : 'white',
-          border: 'none',
-          borderRadius: '5px',
-          cursor: carregando ? 'not-allowed' : 'pointer',
-          fontSize: '16px',
-          fontWeight: 'bold'
-        }}
-      >
-        {carregando ? 'Sincronizando com Omie...' : 'Sincronizar Códigos'}
-      </button>
-
-      {erro && (
-        <div style={{ color: 'red', marginTop: '20px', padding: '10px', backgroundColor: '#ffe6e6', borderRadius: '5px' }}>
-          <strong>Aviso:</strong> {erro}
+    <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', padding: '40px 20px', fontFamily: '"Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+      
+      {/* Container Principal */}
+      <div style={{ maxWidth: '900px', margin: '0 auto', backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', padding: '40px' }}>
+        
+        {/* Cabeçalho */}
+        <div style={{ textAlign: 'center', borderBottom: '2px solid #f0f0f0', paddingBottom: '24px', marginBottom: '32px' }}>
+          <h1 style={{ color: '#2c3e50', margin: '0 0 8px 0', fontSize: '28px' }}>📦 Validador de SKUs - Biscoitê</h1>
+          <p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Encontre rapidamente as numerações livres no Omie para cadastrar novos produtos.</p>
         </div>
-      )}
 
-      {/* Tabela de Resultados */}
-      {!carregando && dadosGaps.length > 0 && (
-        <div style={{ marginTop: '30px' }}>
-          <h2>Números Disponíveis (Gaps):</h2>
-          {dadosGaps.map((grupo) => (
-            <div key={grupo.prefixo} style={{ marginBottom: '20px', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-              <h3 style={{ margin: '0 0 10px 0' }}>
-                Prefixo: {grupo.prefixo} <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>({grupo.totalEmUso} em uso)</span>
-              </h3>
-              
-              {grupo.gapsDisponiveis.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {grupo.gapsDisponiveis.map(gap => (
-                    <span key={gap} style={{ backgroundColor: '#e6f7ff', border: '1px solid #91d5ff', padding: '4px 8px', borderRadius: '4px', fontSize: '14px' }}>
-                      {gap}
+        {/* Área do Botão */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <button 
+            onClick={buscarDoOmie} 
+            disabled={carregando}
+            style={{
+              padding: '14px 32px',
+              backgroundColor: carregando ? '#bdc3c7' : '#0070f3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: carregando ? 'wait' : 'pointer',
+              fontSize: '16px',
+              fontWeight: '600',
+              transition: 'background-color 0.2s',
+              boxShadow: carregando ? 'none' : '0 4px 12px rgba(0, 112, 243, 0.3)'
+            }}
+          >
+            {carregando ? '⏳ Sincronizando com Omie...' : '🔄 Sincronizar Códigos'}
+          </button>
+        </div>
+
+        {/* Mensagem de Erro */}
+        {erro && (
+          <div style={{ backgroundColor: '#fee2e2', borderLeft: '4px solid #ef4444', color: '#b91c1c', padding: '16px', borderRadius: '4px', marginBottom: '24px' }}>
+            <strong>Aviso:</strong> {erro}
+          </div>
+        )}
+
+        {/* Resultados */}
+        {!carregando && dadosGaps.length > 0 && (
+          <div>
+            <h2 style={{ color: '#34495e', fontSize: '20px', marginBottom: '20px' }}>Resultados da Análise:</h2>
+            
+            <div style={{ display: 'grid', gap: '20px' }}>
+              {dadosGaps.map((grupo) => (
+                <div key={grupo.prefixo} style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '10px', backgroundColor: '#f8fafc' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>
+                      Prefixo: <span style={{ color: '#0070f3' }}>{grupo.prefixo}</span>
+                    </h3>
+                    <span style={{ fontSize: '14px', color: '#64748b', backgroundColor: '#e2e8f0', padding: '4px 10px', borderRadius: '20px' }}>
+                      {grupo.totalEmUso} em uso
                     </span>
-                  ))}
+                  </div>
+                  
+                  {grupo.gapsDisponiveis.length > 0 ? (
+                    <div>
+                      <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#475569', fontWeight: '500' }}>SKUs Livres:</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {grupo.gapsDisponiveis.map(gap => (
+                          <span key={gap} style={{ backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', padding: '6px 12px', borderRadius: '6px', fontSize: '15px', fontWeight: '600', letterSpacing: '0.5px' }}>
+                            {gap}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ color: '#94a3b8', margin: 0, fontSize: '14px', fontStyle: 'italic' }}>Nenhum intervalo livre encontrado nesta sequência.</p>
+                  )}
+
                 </div>
-              ) : (
-                <p style={{ color: '#888', margin: 0, fontSize: '14px' }}>Nenhum gap disponível nesta sequência.</p>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
