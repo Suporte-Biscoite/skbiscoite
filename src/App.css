@@ -1,0 +1,219 @@
+/* Importando uma fonte moderna e limpa, no estilo da marca */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+
+:root {
+  /* Paleta de Cores inspirada na Biscoitê */
+  --bg-color: #F8F6F0;       /* Fundo creme suave / Off-white */
+  --primary-color: #0F2041;  /* Azul marinho escuro (marca e textos principais) */
+  --accent-color: #F2A900;   /* Amarelo/Dourado para botões e destaques */
+  --accent-hover: #D89600;   /* Amarelo mais escuro para o hover */
+  --card-bg: #FFFFFF;        /* Fundo branco para os blocos */
+  --text-main: #333333;      /* Cor principal para leitura */
+  --text-light: #777777;     /* Cor secundária para textos de apoio */
+  --border-color: #E5E0D8;   /* Bordas discretas */
+}
+
+body {
+  background-color: var(--bg-color);
+  font-family: 'Montserrat', sans-serif;
+  margin: 0;
+  padding: 0;
+  color: var(--text-main);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.container {
+  width: 100%;
+  max-width: 650px;
+  margin: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+h1 {
+  color: var(--primary-color);
+  text-align: center;
+  font-weight: 700;
+  font-size: 2rem;
+  margin-bottom: 10px;
+  letter-spacing: -0.5px;
+}
+
+.card {
+  background-color: var(--card-bg);
+  padding: 30px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(15, 32, 65, 0.06);
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}
+
+h3 {
+  color: var(--primary-color);
+  margin-top: 0;
+  font-weight: 600;
+  font-size: 1.15rem;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #F0ECE4;
+  padding-bottom: 12px;
+}
+
+/* Estilização do input de arquivo (Planilha) */
+input[type="file"] {
+  width: 100%;
+  padding: 12px;
+  border: 2px dashed var(--primary-color);
+  border-radius: 10px;
+  background-color: #FAFAFA;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-main);
+  box-sizing: border-box;
+  transition: background-color 0.2s;
+}
+
+input[type="file"]:hover {
+  background-color: #F0F4F8;
+}
+
+/* Container dos botões de rádio */
+.tipo-botoes {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.tipo-botoes label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--primary-color);
+  padding: 12px 15px;
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  flex: 1;
+  user-select: none;
+}
+
+.tipo-botoes label:hover {
+  border-color: var(--primary-color);
+  background-color: #F8F9FA;
+}
+
+/* Destaca o botão de rádio quando selecionado usando o CSS pseudo-class :has() */
+.tipo-botoes label:has(input:checked) {
+  border-color: var(--primary-color);
+  background-color: rgba(15, 32, 65, 0.05);
+}
+
+/* Esconde o input de rádio original mantendo a funcionalidade */
+.tipo-botoes input[type="radio"] {
+  accent-color: var(--primary-color);
+  transform: scale(1.2);
+}
+
+/* Input de texto para o nome do produto */
+input[type="text"] {
+  width: 100%;
+  padding: 15px;
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-color: #FAFAFA;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(15, 32, 65, 0.1);
+}
+
+p small {
+  color: var(--text-light);
+  display: block;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Botão de Ação Principal */
+.btn-gerar {
+  width: 100%;
+  padding: 16px;
+  background-color: var(--accent-color);
+  color: var(--primary-color);
+  border: none;
+  border-radius: 10px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 25px;
+  transition: background-color 0.3s ease, transform 0.1s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-gerar:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-gerar:active {
+  transform: scale(0.98);
+}
+
+/* Card de Resultado (com destaque visual inverso) */
+.resultado-card {
+  background-color: var(--primary-color);
+  color: var(--card-bg);
+  padding: 30px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(15, 32, 65, 0.25);
+  animation: slideUp 0.4s ease-out;
+}
+
+.resultado-card h2 {
+  margin-top: 0;
+  color: var(--accent-color);
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+}
+
+.resultado-card p {
+  font-size: 1.2rem;
+  margin: 12px 0;
+  font-weight: 400;
+}
+
+.resultado-card p strong {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+/* Animação suave quando o resultado aparecer */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
