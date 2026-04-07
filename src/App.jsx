@@ -52,7 +52,7 @@ export default function App() {
       }
     }
 
-    // Ordena os grupos de forma crescente pelo prefixo
+    // Ordena os grupos de forma crescente pelo prefix
     gruposProcessados.sort((a, b) => parseInt(a.prefixo) - parseInt(b.prefixo));
 
     setDados({
