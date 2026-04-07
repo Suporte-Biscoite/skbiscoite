@@ -1,72 +1,66 @@
-import React, { useState, useEffect } from 'react';
-import './App.css'; 
+import { useState } from 'react';
 
-export default function App() {
-  const [dados, setDados] = useState({ grupos: [], totalEmUso: 0, totalLivresGeral: 0 });
+function App() {
+  const [dadosGaps, setDadosGaps] = useState([]);
   const [carregando, setCarregando] = useState(false);
-  const [busca, setBusca] = useState('');
+  const [erro, setErro] = useState(null);
 
-  // Lógica de negócio: agrupa os códigos e encontra os "gaps" disponíveis
-  const processarCodigos = (codigos) => {
-    const gruposMapa = {};
+  // Função que recebe a lista crua de códigos e encontra os "buracos"
+  const processarCodigos = (codigosBrutos) => {
+    const grupos = {};
 
-    // Agrupa pelos 4 primeiros dígitos (prefixo)
-    codigos.forEach(cod => {
-      const prefixo = cod.substring(0, 4);
-      const numero = parseInt(cod, 10);
-      if (!gruposMapa[prefixo]) gruposMapa[prefixo] = [];
-      gruposMapa[prefixo].push(numero);
+    // 1. Agrupar códigos pelos 4 primeiros dígitos (prefixo)
+    codigosBrutos.forEach(codigo => {
+      if (codigo.length === 7) {
+        const prefixo = codigo.substring(0, 4);
+        const sufixo = parseInt(codigo.substring(4, 7), 10);
+
+        if (!grupos[prefixo]) {
+          grupos[prefixo] = [];
+        }
+        grupos[prefixo].push(sufixo);
+      }
     });
 
-    const gruposProcessados = [];
-    let totalLivresGeral = 0;
+    const resultadoFinal = [];
 
-    for (const prefixo in gruposMapa) {
-      // Ordena os números do menor para o maior dentro de cada grupo
-      const nums = gruposMapa[prefixo].sort((a, b) => a - b);
-      const intervalos = [];
-      let livresNoGrupo = 0;
+    // 2. Encontrar os números faltando em cada grupo
+    for (const prefixo in grupos) {
+      // Ordena os finais do menor para o maior
+      const sufixos = grupos[prefixo].sort((a, b) => a - b);
+      const gaps = [];
 
-      // Procura gaps (intervalos onde a diferença entre o número atual e o anterior é maior que 1)
-      for (let i = 1; i < nums.length; i++) {
-        const diff = nums[i] - nums[i - 1];
-        if (diff > 1) {
-          const gapInicio = nums[i - 1] + 1;
-          const gapFim = nums[i] - 1;
-          const qtd = gapFim - gapInicio + 1;
-          
-          intervalos.push({ inicio: gapInicio, fim: gapFim, qtd });
-          livresNoGrupo += qtd;
-          totalLivresGeral += qtd;
+      if (sufixos.length > 0) {
+        const minimo = sufixos[0];
+        const maximo = sufixos[sufixos.length - 1];
+
+        // Varre do menor até o maior número procurando quem não está na lista
+        for (let i = minimo + 1; i < maximo; i++) {
+          if (!sufixos.includes(i)) {
+            // Se achou um gap, formata com zeros à esquerda (ex: de 5 vira 005)
+            const gapFormatado = String(i).padStart(3, '0');
+            gaps.push(`${prefixo}${gapFormatado}`);
+          }
         }
       }
 
-      // Adiciona à lista final apenas se o grupo tiver códigos livres disponíveis
-      if (livresNoGrupo > 0) {
-        gruposProcessados.push({
-          prefixo,
-          emUso: nums.length,
-          livres: livresNoGrupo,
-          intervalos
-        });
-      }
+      resultadoFinal.push({
+        prefixo,
+        totalEmUso: sufixos.length,
+        gapsDisponiveis: gaps
+      });
     }
 
-    // Ordena os grupos de forma crescente pelo prefix
-    gruposProcessados.sort((a, b) => parseInt(a.prefixo) - parseInt(b.prefixo));
-
-    setDados({
-      grupos: gruposProcessados,
-      totalEmUso: codigos.length,
-      totalLivresGeral
-    });
+    // Ordena a tela para o menor prefixo aparecer primeiro
+    resultadoFinal.sort((a, b) => a.prefixo.localeCompare(b.prefixo));
+    setDadosGaps(resultadoFinal);
   };
 
-  // Função que comunica com o Back-end da Vercel (Serverless Function)
   const buscarDoOmie = async () => {
     setCarregando(true);
+    setErro(null);
     try {
-      // O fetch agora aponta para a pasta /api local que a Vercel gere automaticamente
+      // Bate no back-end da Vercel
       const resposta = await fetch('/api/codigos'); 
       
       if (!resposta.ok) {
@@ -74,84 +68,71 @@ export default function App() {
       }
       
       const codigos = await resposta.json();
-      processarCodigos(codigos);
+      processarCodigos(codigos); 
     } catch (error) {
       console.error(error);
-      alert("Erro ao conectar com a API. Verifica se a função Serverless está a correr corretamente.");
+      setErro("Erro ao conectar com a API. Verifique se esperou 1 minuto desde a última busca.");
     } finally {
       setCarregando(false);
     }
   };
 
-  // Executa a busca automaticamente na primeira vez que o ecrã carrega
-  useEffect(() => {
-    buscarDoOmie();
-  }, []);
-
-  // Filtra os grupos no ecrã com base na pesquisa do utilizador
-  const gruposFiltrados = dados.grupos.filter(g => g.prefixo.includes(busca));
-
   return (
-    <div className="container">
-      <h1>Painel de Códigos Omie</h1>
-      
-      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-        <div>
-          <p><strong>Em uso no Omie:</strong> {dados.totalEmUso} códigos</p>
-          <p><strong>Total de Gaps Livres:</strong> {dados.totalLivresGeral} códigos</p>
-          <p><strong>Grupos com disponibilidade:</strong> {dados.grupos.length}</p>
-        </div>
-        <button 
-          className="btn-gerar" 
-          onClick={buscarDoOmie} 
-          disabled={carregando} 
-          style={{ width: 'auto', marginTop: 0, padding: '12px 24px' }}
-        >
-          {carregando ? 'A sincronizar...' : '🔄 Atualizar Agora'}
-        </button>
-      </div>
+    <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+      <h1>Validador de SKUs</h1>
+      <p>Clique no botão abaixo para buscar os códigos em uso no Omie e identificar numerações livres.</p>
 
-      <div className="card">
-        <input 
-          type="text" 
-          placeholder="Filtrar por grupo (Ex: 3004)" 
-          value={busca} 
-          onChange={(e) => setBusca(e.target.value)} 
-          style={{ width: '100%', boxSizing: 'border-box' }}
-        />
-      </div>
+      {/* Botão que controla a requisição */}
+      <button 
+        onClick={buscarDoOmie} 
+        disabled={carregando}
+        style={{
+          padding: '12px 24px',
+          backgroundColor: carregando ? '#ccc' : '#0070f3',
+          color: carregando ? '#666' : 'white',
+          border: 'none',
+          borderRadius: '5px',
+          cursor: carregando ? 'not-allowed' : 'pointer',
+          fontSize: '16px',
+          fontWeight: 'bold'
+        }}
+      >
+        {carregando ? 'Sincronizando com Omie...' : 'Sincronizar Códigos'}
+      </button>
 
-      {gruposFiltrados.length === 0 && !carregando ? (
-        <div className="card" style={{ textAlign: 'center', color: 'var(--text-light)' }}>
-          <p>Nenhum grupo encontrado com este filtro.</p>
+      {erro && (
+        <div style={{ color: 'red', marginTop: '20px', padding: '10px', backgroundColor: '#ffe6e6', borderRadius: '5px' }}>
+          <strong>Aviso:</strong> {erro}
         </div>
-      ) : (
-        gruposFiltrados.map((grupo) => (
-          <div key={grupo.prefixo} className="card" style={{ borderLeft: '5px solid var(--accent-color)' }}>
-            <h3 style={{ borderBottom: 'none', marginBottom: '10px' }}>
-              Grupo {grupo.prefixo}xxx
-            </h3>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginBottom: '15px' }}>
-              {grupo.livres} códigos livres | {grupo.intervalos.length} intervalo(s)
-            </p>
-            
-            {grupo.intervalos.map((intervalo, idx) => (
-              <div key={idx} style={{ background: '#F8F9FA', padding: '12px', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>
-                  <strong>{intervalo.inicio}</strong> até <strong>{intervalo.fim}</strong> <small>({intervalo.qtd} livres)</small>
-                </span>
-                <button 
-                  onClick={() => navigator.clipboard.writeText(intervalo.inicio.toString())}
-                  style={{ background: 'var(--primary-color)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                  title="Copiar o primeiro código deste intervalo"
-                >
-                  Copiar 1º
-                </button>
-              </div>
-            ))}
-          </div>
-        ))
+      )}
+
+      {/* Tabela de Resultados */}
+      {!carregando && dadosGaps.length > 0 && (
+        <div style={{ marginTop: '30px' }}>
+          <h2>Números Disponíveis (Gaps):</h2>
+          {dadosGaps.map((grupo) => (
+            <div key={grupo.prefixo} style={{ marginBottom: '20px', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
+              <h3 style={{ margin: '0 0 10px 0' }}>
+                Prefixo: {grupo.prefixo} <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>({grupo.totalEmUso} em uso)</span>
+              </h3>
+              
+              {grupo.gapsDisponiveis.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {grupo.gapsDisponiveis.map(gap => (
+                    <span key={gap} style={{ backgroundColor: '#e6f7ff', border: '1px solid #91d5ff', padding: '4px 8px', borderRadius: '4px', fontSize: '14px' }}>
+                      {gap}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: '#888', margin: 0, fontSize: '14px' }}>Nenhum gap disponível nesta sequência.</p>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
+
+export default App;
