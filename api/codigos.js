@@ -31,7 +31,10 @@ export default async function handler(req, res) {
     
     if (data.produto_servico_cadastro) {
       data.produto_servico_cadastro.forEach(prod => {
-        codigos.push(String(prod.codigo_produto).trim());
+        // Pegando o campo "codigo" (SKU) em vez do ID interno
+        if (prod.codigo) {
+          codigos.push(String(prod.codigo).trim());
+        }
       });
     }
 
