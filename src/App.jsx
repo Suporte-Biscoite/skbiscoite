@@ -1,12 +1,12 @@
 import { useState } from 'react';
 
 function App() {
-  // Estado do formulário
   const [formData, setFormData] = useState({
     descricao: '',
     unidade: 'UN',
     preco: '',
-    prefixo: ''
+    prefixo: '',
+    ncm: '' // <-- Campo NCM adicionado aqui
   });
 
   const [carregando, setCarregando] = useState(false);
@@ -41,14 +41,13 @@ function App() {
   };
 
   const cadastrarProduto = async (e) => {
-    e.preventDefault(); // Evita recarregar a página
+    e.preventDefault();
     setCarregando(true);
     setErro(null);
     setSucesso(null);
     let todosCodigosAcomulados = [];
 
     try {
-      // 1. Busca as páginas para achar o gap (mesma lógica super rápida de antes)
       setStatusTexto("Calculando próximo SKU livre...");
       const res1 = await fetch(`/api/codigos?pagina=1&t=${new Date().getTime()}`);
       if (!res1.ok) throw new Error("Erro na varredura inicial do Omie");
@@ -70,11 +69,9 @@ function App() {
         }
       }
 
-      // 2. Acha o código exato
       const codigoGerado = descobrirProximoCodigo(todosCodigosAcomulados, formData.prefixo);
       setStatusTexto(`Código ${codigoGerado} encontrado! Enviando para o Omie...`);
 
-      // 3. Manda os dados preenchidos para a nossa NOVA API de cadastro
       const resCadastro = await fetch('/api/cadastrar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,15 +79,18 @@ function App() {
           codigo: codigoGerado,
           descricao: formData.descricao,
           unidade: formData.unidade,
-          preco: formData.preco
+          preco: formData.preco,
+          ncm: formData.ncm // <-- Enviando o NCM pro back-end
         })
       });
 
-      if (!resCadastro.ok) throw new Error("Falha ao salvar o produto no Omie.");
+      if (!resCadastro.ok) {
+        const errData = await resCadastro.json();
+        throw new Error(errData.error || "Falha ao salvar o produto no Omie.");
+      }
 
-      // Sucesso total! Limpa o formulário.
       setSucesso(`Produto criado com sucesso! O SKU gerado foi: ${codigoGerado}`);
-      setFormData({ descricao: '', unidade: 'UN', preco: '', prefixo: '' });
+      setFormData({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
 
     } catch (error) {
       console.error(error);
@@ -115,8 +115,7 @@ function App() {
           <div>
             <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Descrição do Produto *</label>
             <input 
-              required
-              type="text" name="descricao" value={formData.descricao} onChange={handleChange}
+              required type="text" name="descricao" value={formData.descricao} onChange={handleChange}
               placeholder="Ex: LEITE A XANDO INTEGRAL 1 LITRO" disabled={carregando}
               style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
             />
@@ -147,18 +146,29 @@ function App() {
             </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Família / Categoria *</label>
-            <select 
-              required name="prefixo" value={formData.prefixo} onChange={handleChange} disabled={carregando}
-              style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
-            >
-              <option value="">Selecione uma categoria...</option>
-              <option value="300">EXTERNO</option>
-              <option value="400">INTERNO</option>
-              <option value="500">CESTAS</option>
-              <option value="700">ENTRADA DE NOTAS</option>
-            </select>
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <div style={{ flex: 2 }}>
+              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Família / Categoria *</label>
+              <select 
+                required name="prefixo" value={formData.prefixo} onChange={handleChange} disabled={carregando}
+                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
+              >
+                <option value="">Selecione uma categoria...</option>
+                <option value="300">EXTERNO</option>
+                <option value="400">INTERNO</option>
+                <option value="500">CESTAS</option>
+                <option value="700">ENTRADA DE NOTAS</option>
+              </select>
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>NCM *</label>
+              <input 
+                required type="text" name="ncm" value={formData.ncm} onChange={handleChange}
+                placeholder="Ex: 19053100" disabled={carregando}
+                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+              />
+            </div>
           </div>
           
           <button 
