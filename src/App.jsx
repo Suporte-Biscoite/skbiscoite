@@ -44,30 +44,58 @@ function App() {
     setCarregando(true);
     setErro(null);
     setProximoCodigo(null);
-    let paginaAtual = 1;
-    let totalPaginas = 1;
     let todosCodigosAcomulados = [];
 
     try {
-      // Pede as páginas uma a uma para a Vercel não dar Timeout
-      while (paginaAtual <= totalPaginas) {
-        setStatusTexto(`Lendo página ${paginaAtual} de ${totalPaginas === 1 ? '...' : totalPaginas} no Omie...`);
+      // 1. Busca apenas a PRIMEIRA página para descobrir o total de páginas que existem
+      setStatusTexto("Iniciando varredura rápida...");
+      const res1 = await fetch(`/api/codigos?pagina=1&t=${new Date().getTime()}`);
+      if (!res1.ok) throw new Error("Erro na comunicação com a API");
+      
+      const data1 = await res1.json();
+      todosCodigosAcomulados = [...data1.codigos];
+      const totalPaginas = data1.total_paginas;
+
+      // 2. Se tiver mais páginas, baixa o resto em LOTES PARALELOS (Muito mais rápido!)
+      if (totalPaginas > 1) {
+        setStatusTexto(`Baixando dados em paralelo (1/${totalPaginas})...`);
         
-        const resposta = await fetch(`/api/codigos?pagina=${paginaAtual}&t=${new Date().getTime()}`);
-        if (!resposta.ok) throw new Error("Erro na comunicação");
+        // Cria uma lista com as páginas que faltam (ex: [2, 3, 4, 5])
+        const paginasPendentes = [];
+        for (let p = 2; p <= totalPaginas; p++) paginasPendentes.push(p);
+
+        // O Omie permite até 4 conexões simultâneas. Usamos 3 por segurança contra bloqueios.
+        const tamanhoLote = 3; 
         
-        const data = await resposta.json();
-        todosCodigosAcomulados = [...todosCodigosAcomulados, ...data.codigos];
-        totalPaginas = data.total_paginas;
-        paginaAtual++;
+        for (let i = 0; i < paginasPendentes.length; i += tamanhoLote) {
+          // Pega 3 páginas da fila
+          const lote = paginasPendentes.slice(i, i + tamanhoLote);
+          
+          // Dispara as 3 requisições para a Vercel EXATAMENTE AO MESMO TEMPO
+          const promessas = lote.map(p => 
+            fetch(`/api/codigos?pagina=${p}&t=${new Date().getTime()}`).then(res => res.json())
+          );
+          
+          // O Promise.all espera as 3 terminarem juntas
+          const resultadosLote = await Promise.all(promessas);
+          
+          // Junta os códigos novos com os que já tínhamos
+          resultadosLote.forEach(res => {
+            todosCodigosAcomulados = [...todosCodigosAcomulados, ...res.codigos];
+          });
+          
+          // Atualiza o texto na tela para o usuário não achar que travou
+          const progresso = Math.min(i + tamanhoLote + 1, totalPaginas);
+          setStatusTexto(`Baixando dados em paralelo (${progresso}/${totalPaginas})...`);
+        }
       }
 
-      setStatusTexto("Processando códigos...");
+      setStatusTexto("Calculando o próximo número livre...");
       descobrirProximoCodigo(todosCodigosAcomulados, prefixo);
 
     } catch (error) {
       console.error(error);
-      setErro("Falha na busca. Espere alguns segundos e tente novamente.");
+      setErro("Falha na busca. O servidor pode estar ocupado. Tente novamente.");
     } finally {
       setCarregando(false);
       setStatusTexto('');
