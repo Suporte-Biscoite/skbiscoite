@@ -8,10 +8,10 @@ function App() {
   const [erro, setErro] = useState(null);
 
   const descobrirProximoCodigo = (todosCodigos, prefixoDesejado) => {
-    // Filtra apenas os códigos que começam com o que o usuário digitou
+    // Filtra apenas os códigos que começam com o prefixo escolhido
     const codigosDaFamilia = todosCodigos.filter(c => c.startsWith(prefixoDesejado));
     
-    // Extrai só o final numérico (ex: se digitou 400 e achou 400015, tira o 15)
+    // Extrai só o final numérico
     const sufixos = codigosDaFamilia
       .map(c => c.substring(prefixoDesejado.length))
       .filter(s => /^\d+$/.test(s)) // Garante que o final é só número
@@ -24,11 +24,11 @@ function App() {
       if (sufixos[i] === proximoNumeroLivre) {
         proximoNumeroLivre++; // Esse já existe, vamos testar o próximo
       } else if (sufixos[i] > proximoNumeroLivre) {
-        break; // Opa, achamos um buraco (gap)!
+        break; // Achamos um buraco (gap)
       }
     }
 
-    // Formata com zeros (se o código padrão da Biscoitê é de 7 digitos, ele preenche com os zeros necessários)
+    // Formata o final com zeros à esquerda
     const tamanhoIdealSufixo = Math.max(3, 7 - prefixoDesejado.length);
     const numeroFormatado = String(proximoNumeroLivre).padStart(tamanhoIdealSufixo, '0');
     
@@ -36,8 +36,8 @@ function App() {
   };
 
   const buscarDoOmie = async () => {
-    if (!prefixo.trim()) {
-      setErro("Por favor, digite um prefixo primeiro.");
+    if (!prefixo) {
+      setErro("Por favor, selecione uma categoria primeiro.");
       return;
     }
 
@@ -49,7 +49,7 @@ function App() {
     let todosCodigosAcomulados = [];
 
     try {
-      // Loop no Front-end: Pede uma página por vez pra Vercel não travar!
+      // Pede as páginas uma a uma para a Vercel não dar Timeout
       while (paginaAtual <= totalPaginas) {
         setStatusTexto(`Lendo página ${paginaAtual} de ${totalPaginas === 1 ? '...' : totalPaginas} no Omie...`);
         
@@ -63,7 +63,7 @@ function App() {
       }
 
       setStatusTexto("Processando códigos...");
-      descobrirProximoCodigo(todosCodigosAcomulados, prefixo.trim());
+      descobrirProximoCodigo(todosCodigosAcomulados, prefixo);
 
     } catch (error) {
       console.error(error);
@@ -80,27 +80,46 @@ function App() {
         
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <h1 style={{ color: '#2c3e50', margin: '0 0 8px 0', fontSize: '28px' }}>📦 Gerador de SKUs - Biscoitê</h1>
-          <p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Digite a família do produto para obter o próximo código livre na sequência.</p>
+          <p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Selecione a categoria do produto para obter o próximo código livre na sequência.</p>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
-          <label style={{ fontWeight: '600', color: '#34495e' }}>Prefixo Desejado (ex: 300, 400, 1234):</label>
-          <input 
-            type="text" 
+          <label style={{ fontWeight: '600', color: '#34495e' }}>Categoria do Produto:</label>
+          
+          {/* Nova lista de seleção (Dropdown) */}
+          <select 
             value={prefixo} 
             onChange={(e) => setPrefixo(e.target.value)}
-            placeholder="Digite os números iniciais..."
             disabled={carregando}
-            style={{ padding: '12px', fontSize: '18px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-          />
+            style={{ 
+              padding: '12px', 
+              fontSize: '18px', 
+              borderRadius: '8px', 
+              border: '1px solid #cbd5e1',
+              backgroundColor: '#fff',
+              cursor: carregando ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <option value="">Selecione uma categoria...</option>
+            <option value="300">EXTERNO</option>
+            <option value="400">INTERNO</option>
+            <option value="500">CESTAS</option>
+            <option value="700">ENTRADA DE NOTAS</option>
+          </select>
           
           <button 
             onClick={buscarDoOmie} 
             disabled={carregando}
             style={{
-              padding: '16px', backgroundColor: carregando ? '#bdc3c7' : '#0070f3',
-              color: 'white', border: 'none', borderRadius: '8px', cursor: carregando ? 'wait' : 'pointer',
-              fontSize: '18px', fontWeight: 'bold'
+              padding: '16px', 
+              backgroundColor: carregando ? '#bdc3c7' : '#0070f3',
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '8px', 
+              cursor: carregando ? 'wait' : 'pointer',
+              fontSize: '18px', 
+              fontWeight: 'bold',
+              transition: 'background-color 0.2s'
             }}
           >
             {carregando ? '⏳ Sincronizando...' : 'Gerar Próximo Código'}
