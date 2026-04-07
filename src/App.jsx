@@ -53,7 +53,13 @@ function App() {
     setCarregando(true);
     setErro(null);
     try {
-      const resposta = await fetch('/api/codigos'); 
+      // O "?t=" cria uma URL única toda vez, forçando a Vercel a ignorar o cache
+      const resposta = await fetch(`/api/codigos?t=${new Date().getTime()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      }); 
       
       if (!resposta.ok) {
         throw new Error(`Erro na resposta da API: ${resposta.status}`);

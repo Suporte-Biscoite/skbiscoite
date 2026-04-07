@@ -50,6 +50,9 @@ export default async function handler(req, res) {
 
     const codigosUnicos = [...new Set(todosCodigos)];
     
+    // LINHA NOVA: Ordem expressa para não fazer cache
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    
     // Retorna os dados com sucesso (Status 200)
     res.status(200).json(codigosUnicos);
 
