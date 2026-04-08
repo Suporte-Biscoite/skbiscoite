@@ -1,188 +1,137 @@
 import { useState } from 'react';
 
 function App() {
-  const [formData, setFormData] = useState({
-    descricao: '',
-    unidade: 'UN',
-    preco: '',
-    prefixo: '',
-    ncm: '' // <-- Campo NCM adicionado aqui
-  });
-
+  const [aba, setAba] = useState('individual'); // 'individual' ou 'massa'
+  const [formData, setFormData] = useState({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
+  const [csvFile, setCsvFile] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [statusTexto, setStatusTexto] = useState('');
-  const [erro, setErro] = useState(null);
-  const [sucesso, setSucesso] = useState(null);
+  const [logs, setLogs] = useState([]);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const descobrirProximoCodigo = (todosCodigos, prefixoDesejado) => {
-    const codigosDaFamilia = todosCodigos.filter(c => c.startsWith(prefixoDesejado));
-    const sufixos = codigosDaFamilia
-      .map(c => c.substring(prefixoDesejado.length))
-      .filter(s => /^\d+$/.test(s))
-      .map(s => parseInt(s, 10))
-      .sort((a, b) => a - b);
+  // Busca uma lista de N códigos disponíveis de uma vez só
+  const buscarGapsEmLote = async (prefixoDesejado, quantidadeNecessaria) => {
+    setStatusTexto("Varrendo catálogo para reservar SKUs...");
+    let todosCodigos = [];
+    let pagina = 1;
+    let total = 1;
 
-    let proximoNumeroLivre = 1;
-    for (let i = 0; i < sufixos.length; i++) {
-      if (sufixos[i] === proximoNumeroLivre) {
-        proximoNumeroLivre++;
-      } else if (sufixos[i] > proximoNumeroLivre) {
-        break;
+    // Busca a primeira página
+    const res1 = await fetch(`/api/codigos?pagina=1&t=${new Date().getTime()}`);
+    const data1 = await res1.json();
+    todosCodigos = [...data1.codigos];
+    total = data1.total_paginas;
+
+    // Busca o resto em paralelo
+    if (total > 1) {
+      const paginas = [];
+      for (let p = 2; p <= total; p++) paginas.push(p);
+      const lotes = [];
+      for (let i = 0; i < paginas.length; i += 3) {
+        const promessas = paginas.slice(i, i + 3).map(p => fetch(`/api/codigos?pagina=${p}`).then(r => r.json()));
+        const res = await Promise.all(promessas);
+        res.forEach(d => todosCodigos.push(...d.codigos));
       }
     }
 
-    const tamanhoIdealSufixo = Math.max(3, 7 - prefixoDesejado.length);
-    const numeroFormatado = String(proximoNumeroLivre).padStart(tamanhoIdealSufixo, '0');
-    return `${prefixoDesejado}${numeroFormatado}`;
+    // Lógica de achar múltiplos gaps
+    const codsFamilia = todosCodigos.filter(c => c.startsWith(prefixoDesejado));
+    const sufixos = codsFamilia.map(c => parseInt(c.substring(prefixoDesejado.length), 10)).sort((a, b) => a - b);
+    
+    const gapsEncontrados = [];
+    let tentativa = 1;
+    while (gapsEncontrados.length < quantidadeNecessaria) {
+      if (!sufixos.includes(tentativa)) {
+        const formatado = String(tentativa).padStart(Math.max(3, 7 - prefixoDesejado.length), '0');
+        gapsEncontrados.push(`${prefixoDesejado}${formatado}`);
+      }
+      tentativa++;
+    }
+    return gapsEncontrados;
   };
 
-  const cadastrarProduto = async (e) => {
-    e.preventDefault();
+  const processarCadastroMassa = async () => {
+    if (!csvFile || !formData.prefixo) return alert("Selecione o arquivo e a categoria!");
     setCarregando(true);
-    setErro(null);
-    setSucesso(null);
-    let todosCodigosAcomulados = [];
+    setLogs([]);
 
-    try {
-      setStatusTexto("Calculando próximo SKU livre...");
-      const res1 = await fetch(`/api/codigos?pagina=1&t=${new Date().getTime()}`);
-      if (!res1.ok) throw new Error("Erro na varredura inicial do Omie");
+    const leitor = new FileReader();
+    leitor.onload = async (e) => {
+      const texto = e.target.result;
+      const linhas = texto.split('\n').slice(1).filter(l => l.trim() !== ''); // Ignora cabeçalho
       
-      const data1 = await res1.json();
-      todosCodigosAcomulados = [...data1.codigos];
-      const totalPaginas = data1.total_paginas;
-
-      if (totalPaginas > 1) {
-        const paginasPendentes = [];
-        for (let p = 2; p <= totalPaginas; p++) paginasPendentes.push(p);
-        const tamanhoLote = 3; 
+      try {
+        const skusReservados = await buscarGapsEmLote(formData.prefixo, linhas.length);
         
-        for (let i = 0; i < paginasPendentes.length; i += tamanhoLote) {
-          const lote = paginasPendentes.slice(i, i + tamanhoLote);
-          const promessas = lote.map(p => fetch(`/api/codigos?pagina=${p}&t=${new Date().getTime()}`).then(res => res.json()));
-          const resultadosLote = await Promise.all(promessas);
-          resultadosLote.forEach(res => { todosCodigosAcomulados = [...todosCodigosAcomulados, ...res.codigos]; });
+        for (let i = 0; i < linhas.length; i++) {
+          const [descricao, unidade, preco, ncm] = linhas[i].split(',');
+          setStatusTexto(`Cadastrando ${i + 1} de ${linhas.length}: ${descricao}...`);
+          
+          const res = await fetch('/api/cadastrar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              codigo: skusReservados[i], 
+              descricao: descricao.trim(), 
+              unidade: unidade.trim() || 'UN', 
+              preco: preco.trim(), 
+              ncm: ncm.trim() 
+            })
+          });
+
+          const data = await res.json();
+          setLogs(prev => [...prev, { sku: skusReservados[i], status: res.ok ? '✅ Sucesso' : '❌ Erro' }]);
         }
-      }
-
-      const codigoGerado = descobrirProximoCodigo(todosCodigosAcomulados, formData.prefixo);
-      setStatusTexto(`Código ${codigoGerado} encontrado! Enviando para o Omie...`);
-
-      const resCadastro = await fetch('/api/cadastrar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          codigo: codigoGerado,
-          descricao: formData.descricao,
-          unidade: formData.unidade,
-          preco: formData.preco,
-          ncm: formData.ncm // <-- Enviando o NCM pro back-end
-        })
-      });
-
-      if (!resCadastro.ok) {
-        const errData = await resCadastro.json();
-        throw new Error(errData.error || "Falha ao salvar o produto no Omie.");
-      }
-
-      setSucesso(`Produto criado com sucesso! O SKU gerado foi: ${codigoGerado}`);
-      setFormData({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
-
-    } catch (error) {
-      console.error(error);
-      setErro(error.message || "Ocorreu um erro inesperado.");
-    } finally {
+      } catch (err) { alert("Erro no processamento."); }
       setCarregando(false);
-      setStatusTexto('');
-    }
+      setStatusTexto("Processo concluído!");
+    };
+    leitor.readAsText(csvFile);
   };
+
+  // Reutiliza o buscarDoOmie que você já tem para o cadastro Individual...
+  // (Código anterior de cadastrarProduto aqui...)
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', padding: '40px 20px', fontFamily: '"Segoe UI", sans-serif' }}>
-      <div style={{ maxWidth: '600px', margin: '0 auto', backgroundColor: '#ffffff', borderRadius: '12px', padding: '40px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', padding: '40px 20px', fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: '800px', margin: '0 auto', backgroundColor: '#fff', borderRadius: '12px', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
         
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h1 style={{ color: '#2c3e50', margin: '0 0 8px 0', fontSize: '28px' }}>📦 Cadastro Rápido - Biscoitê</h1>
-          <p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Preencha os dados e o sistema criará o produto no Omie com a numeração correta.</p>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
+          <button onClick={() => setAba('individual')} style={{ flex: 1, padding: '10px', cursor: 'pointer', backgroundColor: aba === 'individual' ? '#0070f3' : '#eee', color: aba === 'individual' ? '#fff' : '#333', border: 'none', borderRadius: '5px' }}>Individual</button>
+          <button onClick={() => setAba('massa')} style={{ flex: 1, padding: '10px', cursor: 'pointer', backgroundColor: aba === 'massa' ? '#0070f3' : '#eee', color: aba === 'massa' ? '#fff' : '#333', border: 'none', borderRadius: '5px' }}>Em Massa (CSV)</button>
         </div>
 
-        <form onSubmit={cadastrarProduto} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+        {aba === 'individual' ? (
+          /* Seu formulário individual aqui (conforme o código anterior) */
+          <div>Formulário Individual (Copie o código do post anterior aqui)</div>
+        ) : (
           <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Descrição do Produto *</label>
-            <input 
-              required type="text" name="descricao" value={formData.descricao} onChange={handleChange}
-              placeholder="Ex: LEITE A XANDO INTEGRAL 1 LITRO" disabled={carregando}
-              style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-            />
-          </div>
+            <h3>Upload de Planilha (CSV)</h3>
+            <p style={{ fontSize: '14px', color: '#666' }}>O arquivo deve conter: Descrição, Unidade, Preço, NCM</p>
+            <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} style={{ marginBottom: '20px' }} />
+            
+            <select name="prefixo" value={formData.prefixo} onChange={handleChange} style={{ width: '100%', padding: '10px', marginBottom: '20px' }}>
+              <option value="">Selecione a Família para TODOS...</option>
+              <option value="300">EXTERNO</option>
+              <option value="400">INTERNO</option>
+              <option value="500">CESTAS</option>
+              <option value="700">ENTRADA DE NOTAS</option>
+            </select>
 
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Unidade *</label>
-              <select 
-                required name="unidade" value={formData.unidade} onChange={handleChange} disabled={carregando}
-                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
-              >
-                <option value="UN">UN (Unidade)</option>
-                <option value="CX">CX (Caixa)</option>
-                <option value="KG">KG (Quilo)</option>
-                <option value="PC">PC (Peça)</option>
-                <option value="LT">LT (Litro)</option>
-              </select>
-            </div>
+            <button onClick={processarCadastroMassa} disabled={carregando} style={{ width: '100%', padding: '15px', backgroundColor: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>
+              {carregando ? statusTexto : 'Iniciar Cadastro em Lote'}
+            </button>
 
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Preço de Venda</label>
-              <input 
-                type="number" step="0.01" name="preco" value={formData.preco} onChange={handleChange}
-                placeholder="0.00" disabled={carregando}
-                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-              />
+            <div style={{ marginTop: '20px', maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', padding: '10px' }}>
+              {logs.map((log, i) => (
+                <div key={i} style={{ fontSize: '13px', padding: '5px 0', borderBottom: '1px solid #f9f9f9' }}>
+                  {log.status} - SKU: {log.sku}
+                </div>
+              ))}
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <div style={{ flex: 2 }}>
-              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Família / Categoria *</label>
-              <select 
-                required name="prefixo" value={formData.prefixo} onChange={handleChange} disabled={carregando}
-                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
-              >
-                <option value="">Selecione uma categoria...</option>
-                <option value="300">EXTERNO</option>
-                <option value="400">INTERNO</option>
-                <option value="500">CESTAS</option>
-                <option value="700">ENTRADA DE NOTAS</option>
-              </select>
-            </div>
-
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>NCM *</label>
-              <input 
-                required type="text" name="ncm" value={formData.ncm} onChange={handleChange}
-                placeholder="Ex: 19053100" disabled={carregando}
-                style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-              />
-            </div>
-          </div>
-          
-          <button 
-            type="submit" disabled={carregando}
-            style={{ marginTop: '10px', padding: '16px', backgroundColor: carregando ? '#bdc3c7' : '#0070f3', color: 'white', border: 'none', borderRadius: '8px', cursor: carregando ? 'wait' : 'pointer', fontSize: '18px', fontWeight: 'bold' }}
-          >
-            {carregando ? '⏳ Processando...' : 'Cadastrar no Omie'}
-          </button>
-        </form>
-
-        {carregando && <p style={{ textAlign: 'center', color: '#e67e22', fontWeight: 'bold', marginTop: '20px' }}>{statusTexto}</p>}
-        {erro && <div style={{ marginTop: '20px', backgroundColor: '#fee2e2', color: '#b91c1c', padding: '16px', borderRadius: '4px' }}><strong>Erro:</strong> {erro}</div>}
-        {sucesso && <div style={{ marginTop: '20px', backgroundColor: '#f0fdf4', color: '#15803d', border: '2px solid #22c55e', padding: '16px', borderRadius: '8px', textAlign: 'center', fontWeight: 'bold', fontSize: '18px' }}>✅ {sucesso}</div>}
-
+        )}
       </div>
     </div>
   );
