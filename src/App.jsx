@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import ExcelJS from 'exceljs';
 
 function App() {
   const [aba, setAba] = useState('individual'); 
   const [formData, setFormData] = useState({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
   
-  const [csvFile, setCsvFile] = useState(null);
+  const [excelFile, setExcelFile] = useState(null);
   const [logMassa, setLogMassa] = useState([]);
   
   const [carregando, setCarregando] = useState(false);
@@ -14,14 +15,14 @@ function App() {
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  // Tradutor Inteligente: Transforma o que a pessoa digitou na planilha no prefixo certo
   const traduzirCategoriaParaPrefixo = (textoDaPlanilha) => {
-    const texto = textoDaPlanilha.toUpperCase().trim();
+    if (!textoDaPlanilha) return '';
+    const texto = String(textoDaPlanilha).toUpperCase().trim();
     if (texto.includes('EXTERNO') || texto === '300') return '300';
     if (texto.includes('INTERNO') || texto === '400') return '400';
     if (texto.includes('CESTA') || texto === '500') return '500';
     if (texto.includes('ENTRADA') || texto === '700') return '700';
-    return ''; // Se não reconhecer nada, retorna vazio para dar erro avisando o usuário
+    return ''; 
   };
 
   const descobrirProximoCodigo = (todosCodigos, prefixoDesejado) => {
@@ -44,8 +45,7 @@ function App() {
 
   const cadastrarProdutoIndividual = async (e) => {
     e.preventDefault();
-    setCarregando(true);
-    setErro(null); setSucesso(null);
+    setCarregando(true); setErro(null); setSucesso(null);
     let todosCodigosAcomulados = [];
 
     try {
@@ -71,8 +71,7 @@ function App() {
       setStatusTexto(`Código ${codigoGerado} encontrado! Enviando para o Omie...`);
 
       const resCadastro = await fetch('/api/cadastrar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           codigo: codigoGerado, descricao: formData.descricao,
           unidade: formData.unidade, preco: formData.preco, ncm: formData.ncm
@@ -119,93 +118,142 @@ function App() {
     return gapsEncontrados;
   };
 
-  const processarCadastroMassa = async () => {
-    if (!csvFile) return alert("Selecione o arquivo CSV primeiro!");
-    setCarregando(true);
-    setErro(null); setSucesso(null); setLogMassa([]);
+  // Cria um arquivo Excel bonitão no estilo Omie
+  const baixarExcelModelo = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Importacao_Produtos');
 
-    const leitor = new FileReader();
-    leitor.onload = async (e) => {
-      const texto = e.target.result;
-      const linhas = texto.split('\n').slice(1).filter(l => l.trim() !== ''); 
-      
-      try {
-        const produtosParaCadastrar = linhas.map(linha => {
-          const colunas = linha.split(',');
-          return {
-            descricao: (colunas[0] || "").trim(),
-            unidade: (colunas[1] || "UN").trim(),
-            preco: (colunas[2] || "0.00").trim(),
-            ncm: (colunas[3] || "").trim(),
-            // Passa o texto da planilha pelo tradutor pra virar 300, 400...
-            prefixo: traduzirCategoriaParaPrefixo((colunas[4] || "")) 
-          };
-        }).filter(p => p.descricao !== '');
+    // Largura das colunas (para ficar bem visível no Excel)
+    worksheet.columns = [
+      { width: 45 }, { width: 15 }, { width: 25 }, { width: 20 }, { width: 25 }
+    ];
 
-        const contagemPorPrefixo = {};
-        produtosParaCadastrar.forEach(p => {
-          if (p.prefixo) contagemPorPrefixo[p.prefixo] = (contagemPorPrefixo[p.prefixo] || 0) + 1;
-        });
+    // Linha 1: Instruções (estilo cinza do Omie)
+    const rowInstrucoes = worksheet.addRow([
+      '(obrigatório)\nPreencha aqui a descrição do produto',
+      '(obrigatório)\nTrata-se da unidade',
+      '(opcional)\nInforme o preço de venda padrão',
+      '(obrigatório)\nInforme o código NCM',
+      '(obrigatório)\nEXTERNO, INTERNO, CESTAS ou ENTRADA'
+    ]);
+    rowInstrucoes.height = 45;
+    rowInstrucoes.font = { color: { argb: 'FF666666' }, size: 9, italic: true };
+    rowInstrucoes.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    rowInstrucoes.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; });
 
-        const skusDisponiveis = {};
-        const prefixosDetectados = Object.keys(contagemPorPrefixo);
-        
-        for (let i = 0; i < prefixosDetectados.length; i++) {
-          const pref = prefixosDetectados[i];
-          setStatusTexto(`Reservando SKUs para a categoria ${pref}...`);
-          skusDisponiveis[pref] = await buscarGapsEmLote(pref, contagemPorPrefixo[pref]);
-        }
+    // Linha 2: Cabeçalhos Reais (Cores parecidas com o Omie)
+    const rowCabecalho = worksheet.addRow([
+      'Descrição do Produto *', 'Unidade *', 'Preço Unitário de Venda', 'Código NCM *', 'Família / Categoria *'
+    ]);
+    rowCabecalho.height = 25;
+    rowCabecalho.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    rowCabecalho.alignment = { vertical: 'middle', horizontal: 'center' };
+    rowCabecalho.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF343A40' } }; }); // Fundo escuro/elegante
 
-        const novosLogs = [];
-        for (let i = 0; i < produtosParaCadastrar.length; i++) {
-          const prod = produtosParaCadastrar[i];
-          
-          if (!prod.prefixo || !skusDisponiveis[prod.prefixo]) {
-            novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: 'Erro: Categoria não reconhecida na planilha' });
-            continue;
-          }
+    // Linhas de Exemplo
+    worksheet.addRow(['LEITE INTEGRAL XANDO 1L', 'UN', '10.50', '19053100', 'EXTERNO']);
+    worksheet.addRow(['CAIXA DE BOMBOM', 'CX', '25.00', '19053200', 'INTERNO']);
+    
+    // Adiciona bordas finas nas células de dados
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'}
+        };
+        if(rowNumber > 2) cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      });
+    });
 
-          const skuParaUsar = skusDisponiveis[prod.prefixo].shift(); 
-          setStatusTexto(`Cadastrando ${i + 1} de ${produtosParaCadastrar.length}: ${prod.descricao}...`);
-          
-          const res = await fetch('/api/cadastrar', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ codigo: skuParaUsar, descricao: prod.descricao, unidade: prod.unidade, preco: prod.preco, ncm: prod.ncm })
-          });
-
-          if (res.ok) {
-            novosLogs.push({ sku: skuParaUsar, descricao: prod.descricao, status: 'Sucesso' });
-          } else {
-            const data = await res.json();
-            novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: `Erro: ${data.error}` });
-          }
-        }
-        
-        setLogMassa(novosLogs);
-        
-      } catch (err) { 
-          alert("Ocorreu um erro crítico no processamento."); console.error(err);
-      }
-      setCarregando(false); setStatusTexto('');
-    };
-    leitor.readAsText(csvFile);
-  };
-
-  const baixarCsvModelo = () => {
-    // Nova planilha com os nomes amigáveis nas categorias
-    const cabecalhos = "Descricao,Unidade,Preco,NCM,Categoria\n";
-    const exemplo1 = "CAIXA PAPELAO GRANDE,UN,5.50,48191000,EXTERNO\n";
-    const exemplo2 = "MATERIAL DE ESCRITORIO,CX,12.00,39261000,INTERNO\n";
-    const exemplo3 = "CESTA DE PASCOA,UN,150.00,19053200,CESTAS\n";
-    const blob = new Blob([cabecalhos + exemplo1 + exemplo2 + exemplo3], { type: 'text/csv;charset=utf-8;' });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.setAttribute("download", "modelo_omie_biscoite.csv");
+    a.download = "Planilha_Modelo_Biscoite.xlsx";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  // Calcula quantos deram certo no final
+  // Lê o Excel que o usuário fez upload
+  const processarCadastroMassa = async () => {
+    if (!excelFile) return alert("Selecione o arquivo Excel (.xlsx) primeiro!");
+    setCarregando(true); setErro(null); setSucesso(null); setLogMassa([]);
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const arrayBuffer = await excelFile.arrayBuffer();
+      await workbook.xlsx.load(arrayBuffer);
+      const worksheet = workbook.worksheets[0];
+
+      const produtosParaCadastrar = [];
+
+      // Pula a linha 1 (instruções) e linha 2 (cabeçalhos)
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 2) {
+          // O getCell(1) pega a coluna A, getCell(2) pega B, etc.
+          const descricao = row.getCell(1).value?.toString().trim() || "";
+          
+          if (descricao) {
+            produtosParaCadastrar.push({
+              descricao: descricao,
+              unidade: row.getCell(2).value?.toString().trim() || "UN",
+              preco: row.getCell(3).value?.toString().trim() || "0.00",
+              ncm: row.getCell(4).value?.toString().trim() || "",
+              prefixo: traduzirCategoriaParaPrefixo(row.getCell(5).value?.toString() || "")
+            });
+          }
+        }
+      });
+
+      if(produtosParaCadastrar.length === 0) throw new Error("A planilha parece estar vazia ou sem produtos válidos.");
+
+      const contagemPorPrefixo = {};
+      produtosParaCadastrar.forEach(p => {
+        if (p.prefixo) contagemPorPrefixo[p.prefixo] = (contagemPorPrefixo[p.prefixo] || 0) + 1;
+      });
+
+      const skusDisponiveis = {};
+      const prefixosDetectados = Object.keys(contagemPorPrefixo);
+      
+      for (let i = 0; i < prefixosDetectados.length; i++) {
+        const pref = prefixosDetectados[i];
+        setStatusTexto(`Reservando SKUs para a categoria ${pref}...`);
+        skusDisponiveis[pref] = await buscarGapsEmLote(pref, contagemPorPrefixo[pref]);
+      }
+
+      const novosLogs = [];
+      for (let i = 0; i < produtosParaCadastrar.length; i++) {
+        const prod = produtosParaCadastrar[i];
+        
+        if (!prod.prefixo || !skusDisponiveis[prod.prefixo]) {
+          novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: 'Erro: Categoria não reconhecida' });
+          continue;
+        }
+
+        const skuParaUsar = skusDisponiveis[prod.prefixo].shift(); 
+        setStatusTexto(`Cadastrando ${i + 1} de ${produtosParaCadastrar.length}: ${prod.descricao}...`);
+        
+        const res = await fetch('/api/cadastrar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codigo: skuParaUsar, descricao: prod.descricao, unidade: prod.unidade, preco: prod.preco, ncm: prod.ncm })
+        });
+
+        if (res.ok) {
+          novosLogs.push({ sku: skuParaUsar, descricao: prod.descricao, status: 'Sucesso' });
+        } else {
+          const data = await res.json();
+          novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: `Erro: ${data.error}` });
+        }
+      }
+      
+      setLogMassa(novosLogs);
+      
+    } catch (err) { 
+        alert(err.message || "Ocorreu um erro ao ler a planilha Excel."); 
+        console.error(err);
+    }
+    setCarregando(false); setStatusTexto('');
+  };
+
   const qtdSucesso = logMassa.filter(log => log.status === 'Sucesso').length;
 
   return (
@@ -221,8 +269,8 @@ function App() {
           <button onClick={() => { setAba('individual'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'individual' ? '#0070f3' : '#eee', color: aba === 'individual' ? '#fff' : '#333' }}>
             Cadastro Individual
           </button>
-          <button onClick={() => { setAba('massa'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'massa' ? '#0070f3' : '#eee', color: aba === 'massa' ? '#fff' : '#333' }}>
-            Cadastro em Massa (CSV)
+          <button onClick={() => { setAba('massa'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'massa' ? '#10b981' : '#eee', color: aba === 'massa' ? '#fff' : '#333' }}>
+            Cadastro em Massa (Excel)
           </button>
         </div>
 
@@ -232,7 +280,6 @@ function App() {
 
         {aba === 'individual' ? (
           <form onSubmit={cadastrarProdutoIndividual} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Campos da aba individual mantidos iguais ao seu projeto... */}
             <div>
               <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Descrição do Produto *</label>
               <input required type="text" name="descricao" value={formData.descricao} onChange={handleChange} disabled={carregando} style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
@@ -265,19 +312,20 @@ function App() {
           </form>
         ) : (
           <div>
-            <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>Passo 1: Planilha Modelo</h3>
-                <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#475569' }}>Escreva na coluna Categoria as palavras: <strong>EXTERNO, INTERNO, CESTAS ou ENTRADA DE NOTAS</strong>. O sistema traduz o código sozinho.</p>
-                <button onClick={baixarCsvModelo} style={{ padding: '10px 20px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📥 Baixar Planilha Modelo (CSV)</button>
+            <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>Passo 1: Planilha Modelo (Excel)</h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#475569', textAlign: 'center' }}>Baixe a planilha Excel (.xlsx) já formatada no padrão do sistema.</p>
+                <button onClick={baixarExcelModelo} style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>📥 Baixar Planilha Modelo (.xlsx)</button>
             </div>
 
             <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Passo 2: Envie o arquivo CSV salvo</label>
-                <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files[0])} disabled={carregando} style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', width: '100%', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Passo 2: Envie a Planilha Preenchida (.xlsx)</label>
+                {/* Agora só aceita planilhas Excel reais */}
+                <input type="file" accept=".xlsx, .xls" onChange={(e) => setExcelFile(e.target.files[0])} disabled={carregando} style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', width: '100%', boxSizing: 'border-box', backgroundColor: '#f8fafc' }} />
             </div>
 
-            <button onClick={processarCadastroMassa} disabled={carregando || logMassa.length > 0} style={{ width: '100%', padding: '16px', backgroundColor: (carregando || logMassa.length > 0) ? '#bdc3c7' : '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '18px', cursor: (carregando || logMassa.length > 0) ? 'not-allowed' : 'pointer' }}> 
-              {carregando ? 'Processando Lote...' : '🚀 Iniciar Cadastro Misto'} 
+            <button onClick={processarCadastroMassa} disabled={carregando || logMassa.length > 0} style={{ width: '100%', padding: '16px', backgroundColor: (carregando || logMassa.length > 0) ? '#bdc3c7' : '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '18px', cursor: (carregando || logMassa.length > 0) ? 'not-allowed' : 'pointer' }}> 
+              {carregando ? 'Processando Lote...' : '🚀 Iniciar Cadastro via Excel'} 
             </button>
 
             {/* PAINEL DE RESUMO FINAL */}
@@ -288,10 +336,9 @@ function App() {
                       <p style={{ margin: '10px 0 0 0', fontSize: '18px' }}>
                         Foram cadastrados com sucesso: <strong>{qtdSucesso} de {logMassa.length} produtos!</strong>
                       </p>
-                      <button onClick={() => {setLogMassa([]); setCsvFile(null);}} style={{ marginTop: '15px', padding: '8px 16px', borderRadius: '5px', cursor: 'pointer', border: '1px solid #94a3b8' }}>Fazer Novo Upload</button>
+                      <button onClick={() => {setLogMassa([]); setExcelFile(null);}} style={{ marginTop: '15px', padding: '8px 16px', borderRadius: '5px', cursor: 'pointer', border: '1px solid #94a3b8' }}>Fazer Novo Upload</button>
                   </div>
 
-                  {/* Tabela de Produtos x Códigos Gerados */}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
