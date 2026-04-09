@@ -2,23 +2,16 @@ import { useState, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 
-// Conectando com o banco de dados do Supabase
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
-  // --- ESTADOS DE AUTENTICAÇÃO ---
   const [usuarioLogado, setUsuarioLogado] = useState(null);
-  const [emailInput, setEmailInput] = useState('');
-  const [senhaInput, setSenhaInput] = useState('');
   const [erroLogin, setErroLogin] = useState(null);
-  const [carregandoLogin, setCarregandoLogin] = useState(false);
-  
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [historicoLocal, setHistoricoLocal] = useState([]);
 
-  // --- ESTADOS DO SISTEMA ---
   const [aba, setAba] = useState('individual'); 
   const [formData, setFormData] = useState({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
   const [excelFile, setExcelFile] = useState(null);
@@ -29,15 +22,30 @@ function App() {
   const [erro, setErro] = useState(null);
   const [sucesso, setSucesso] = useState(null);
 
-  // Verifica se o usuário já tem uma sessão ativa ao abrir a página
+  // O "Leão de Chácara" que barra quem não é da Biscoitê
+  const verificarDominio = async (session) => {
+    if (session?.user?.email) {
+      if (session.user.email.endsWith('@biscoite.com.br')) {
+        setUsuarioLogado(session.user.email);
+        setErroLogin(null);
+      } else {
+        // Se o e-mail não for biscoite.com.br, chuta pra fora na hora!
+        await supabase.auth.signOut();
+        setUsuarioLogado(null);
+        setErroLogin("Acesso restrito! Faça login exclusivamente com o seu e-mail corporativo da Biscoitê.");
+      }
+    } else {
+      setUsuarioLogado(null);
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setUsuarioLogado(session.user.email);
+      verificarDominio(session);
     });
 
-    // Fica escutando mudanças (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUsuarioLogado(session?.user?.email || null);
+      verificarDominio(session);
     });
 
     const histSalvo = localStorage.getItem('biscoite_historico');
@@ -46,25 +54,15 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- FUNÇÕES DE LOGIN REAL COM SUPABASE ---
-  const fazerLogin = async (e) => {
-    e.preventDefault();
-    setCarregandoLogin(true);
+  // Login agora é via Google
+  const fazerLoginGoogle = async () => {
     setErroLogin(null);
-
-    // Bate na porta do Supabase e tenta entrar
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: emailInput,
-      password: senhaInput,
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
     });
-
-    if (error) {
-      setErroLogin("E-mail ou senha incorretos. Acesso negado.");
-    } else {
-      setEmailInput('');
-      setSenhaInput('');
-    }
-    setCarregandoLogin(false);
   };
 
   const fazerLogout = async () => {
@@ -75,7 +73,7 @@ function App() {
     const novoRegistro = {
       id: Date.now(),
       dataHora: new Date().toLocaleString('pt-BR'),
-      usuario: usuarioLogado, // Agora salva o e-mail real da pessoa!
+      usuario: usuarioLogado, 
       tipo: tipo,
       quantidade: logs.filter(l => l.status.includes('Sucesso') || l.status === 'OK').length,
       detalhes: logs
@@ -85,7 +83,6 @@ function App() {
     localStorage.setItem('biscoite_historico', JSON.stringify(novoHistorico));
   };
 
-  // --- FUNÇÕES DO SISTEMA OMIE ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const traduzirCategoriaParaPrefixo = (textoDaPlanilha) => {
@@ -103,8 +100,7 @@ function App() {
     const sufixos = codigosDaFamilia.map(c => c.substring(prefixoDesejado.length)).filter(s => /^\d+$/.test(s)).map(s => parseInt(s, 10)).sort((a, b) => a - b);
     let proximoNumeroLivre = 1;
     for (let i = 0; i < sufixos.length; i++) {
-      if (sufixos[i] === proximoNumeroLivre) { proximoNumeroLivre++; } 
-      else if (sufixos[i] > proximoNumeroLivre) { break; }
+      if (sufixos[i] === proximoNumeroLivre) { proximoNumeroLivre++; } else if (sufixos[i] > proximoNumeroLivre) { break; }
     }
     const tamanhoIdealSufixo = Math.max(3, 7 - prefixoDesejado.length);
     return `${prefixoDesejado}${String(proximoNumeroLivre).padStart(tamanhoIdealSufixo, '0')}`;
@@ -129,9 +125,7 @@ function App() {
     const gapsEncontrados = [];
     let tentativa = 1;
     while (gapsEncontrados.length < quantidadeNecessaria) {
-      if (!sufixos.includes(tentativa)) {
-        gapsEncontrados.push(`${prefixoDesejado}${String(tentativa).padStart(Math.max(3, 7 - prefixoDesejado.length), '0')}`);
-      }
+      if (!sufixos.includes(tentativa)) { gapsEncontrados.push(`${prefixoDesejado}${String(tentativa).padStart(Math.max(3, 7 - prefixoDesejado.length), '0')}`); }
       tentativa++;
     }
     return gapsEncontrados;
@@ -175,10 +169,7 @@ function App() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Importacao_Produtos');
     worksheet.columns = [ { width: 45 }, { width: 15 }, { width: 25 }, { width: 20 }, { width: 25 } ];
-    const rowInstrucoes = worksheet.addRow([
-      '(obrigatório)\nPreencha aqui a descrição do produto', '(obrigatório)\nTrata-se da unidade',
-      '(opcional)\nInforme o preço de venda padrão', '(obrigatório)\nInforme o código NCM', '(obrigatório)\nEXTERNO, INTERNO, CESTAS ou NOTAS'
-    ]);
+    const rowInstrucoes = worksheet.addRow(['(obrigatório)\nPreencha aqui a descrição do produto', '(obrigatório)\nTrata-se da unidade', '(opcional)\nInforme o preço de venda padrão', '(obrigatório)\nInforme o código NCM', '(obrigatório)\nEXTERNO, INTERNO, CESTAS ou NOTAS']);
     rowInstrucoes.height = 45; rowInstrucoes.font = { color: { argb: 'FF666666' }, size: 9, italic: true }; rowInstrucoes.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; rowInstrucoes.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; });
     const rowCabecalho = worksheet.addRow([ 'Descrição do Produto *', 'Unidade *', 'Preço Unitário de Venda', 'Código NCM *', 'Família / Categoria *' ]);
     rowCabecalho.height = 25; rowCabecalho.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }; rowCabecalho.alignment = { vertical: 'middle', horizontal: 'center' }; rowCabecalho.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF343A40' } }; });
@@ -222,19 +213,11 @@ function App() {
       const novosLogs = [];
       for (let i = 0; i < produtosParaCadastrar.length; i++) {
         const prod = produtosParaCadastrar[i];
-        if (!prod.prefixo || !skusDisponiveis[prod.prefixo]) {
-          novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: 'Erro: Categoria não reconhecida' }); continue;
-        }
+        if (!prod.prefixo || !skusDisponiveis[prod.prefixo]) { novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: 'Erro: Categoria não reconhecida' }); continue; }
         const skuParaUsar = skusDisponiveis[prod.prefixo].shift(); 
         setStatusTexto(`Cadastrando ${i + 1} de ${produtosParaCadastrar.length}: ${prod.descricao}...`);
-        const res = await fetch('/api/cadastrar', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codigo: skuParaUsar, descricao: prod.descricao, unidade: prod.unidade, preco: prod.preco, ncm: prod.ncm })
-        });
-        if (res.ok) { novosLogs.push({ sku: skuParaUsar, descricao: prod.descricao, status: 'Sucesso' });
-        } else {
-          const data = await res.json(); novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: `Erro: ${data.error}` });
-        }
+        const res = await fetch('/api/cadastrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codigo: skuParaUsar, descricao: prod.descricao, unidade: prod.unidade, preco: prod.preco, ncm: prod.ncm }) });
+        if (res.ok) { novosLogs.push({ sku: skuParaUsar, descricao: prod.descricao, status: 'Sucesso' }); } else { const data = await res.json(); novosLogs.push({ sku: 'Falhou', descricao: prod.descricao, status: `Erro: ${data.error}` }); }
       }
       setLogMassa(novosLogs);
       salvarNoHistorico('Em Massa', novosLogs);
@@ -244,65 +227,36 @@ function App() {
 
   const qtdSucesso = logMassa.filter(log => log.status === 'Sucesso').length;
 
-  // ================= TELA DE LOGIN REAL =================
+  // ================= TELA DE LOGIN GOOGLE =================
   if (!usuarioLogado) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Segoe UI", sans-serif' }}>
         <div style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
           <h1 style={{ color: '#2c3e50', marginBottom: '10px' }}>📦 Validador Omie</h1>
-          <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Acesso restrito à equipe Biscoitê.</p>
-          <form onSubmit={fazerLogin}>
-            <div style={{ textAlign: 'left', marginBottom: '15px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', color: '#334155', marginBottom: '5px' }}>E-mail Corporativo</label>
-              <input type="email" placeholder="nome@biscoite.com.br" required value={emailInput} onChange={(e) => setEmailInput(e.target.value)} disabled={carregandoLogin} style={{ width: '100%', padding: '14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ textAlign: 'left', marginBottom: '25px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', color: '#334155', marginBottom: '5px' }}>Senha</label>
-              <input type="password" placeholder="Sua senha secreta" required value={senhaInput} onChange={(e) => setSenhaInput(e.target.value)} disabled={carregandoLogin} style={{ width: '100%', padding: '14px', fontSize: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-            </div>
-            {erroLogin && <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '10px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: 'bold' }}>{erroLogin}</div>}
-            <button type="submit" disabled={carregandoLogin} style={{ width: '100%', padding: '14px', backgroundColor: carregandoLogin ? '#94a3b8' : '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: carregandoLogin ? 'wait' : 'pointer' }}>
-              {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
-            </button>
-          </form>
+          <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Acesso exclusivo corporativo.</p>
+          
+          {erroLogin && <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '15px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: 'bold', border: '1px solid #fca5a5' }}>{erroLogin}</div>}
+          
+          <button onClick={fazerLoginGoogle} style={{ width: '100%', padding: '14px', backgroundColor: '#ffffff', color: '#3f3f3f', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google Logo" style={{ width: '20px', height: '20px' }} />
+            Entrar com Google Biscoitê
+          </button>
         </div>
       </div>
     );
   }
 
-  // ================= TELA PRINCIPAL (MESMO CÓDIGO DE ANTES) =================
+  // ================= TELA PRINCIPAL =================
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', padding: '20px', fontFamily: '"Segoe UI", sans-serif' }}>
-      
-      {/* BARRA SUPERIOR (HEADER) */}
       <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', backgroundColor: '#fff', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-        <div>
-          <span style={{ fontWeight: 'bold', color: '#334155' }}>👤 Olá, {usuarioLogado}</span>
-        </div>
-        <div style={{ display: 'flex', gap: '15px' }}>
-          <button onClick={() => setMostrarHistorico(true)} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            🕒 Ver Histórico
-          </button>
-          <button onClick={fazerLogout} style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-            Sair
-          </button>
-        </div>
+        <div><span style={{ fontWeight: 'bold', color: '#334155' }}>👤 Olá, {usuarioLogado}</span></div>
+        <div style={{ display: 'flex', gap: '15px' }}><button onClick={() => setMostrarHistorico(true)} style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>🕒 Ver Histórico</button><button onClick={fazerLogout} style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Sair</button></div>
       </div>
 
       <div style={{ maxWidth: '900px', margin: '0 auto', backgroundColor: '#ffffff', borderRadius: '12px', padding: '40px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h1 style={{ color: '#2c3e50', margin: '0 0 8px 0', fontSize: '28px' }}>📦 Cadastro de SKUs - Biscoitê</h1>
-          <p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Gerador automático de numeração com integração Omie.</p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '32px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}>
-          <button onClick={() => { setAba('individual'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'individual' ? '#0070f3' : '#eee', color: aba === 'individual' ? '#fff' : '#333' }}>
-            Cadastro Individual
-          </button>
-          <button onClick={() => { setAba('massa'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'massa' ? '#10b981' : '#eee', color: aba === 'massa' ? '#fff' : '#333' }}>
-            Cadastro em Massa (Excel)
-          </button>
-        </div>
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}><h1 style={{ color: '#2c3e50', margin: '0 0 8px 0', fontSize: '28px' }}>📦 Cadastro de SKUs - Biscoitê</h1><p style={{ color: '#7f8c8d', margin: 0, fontSize: '16px' }}>Gerador automático de numeração com integração Omie.</p></div>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '32px', borderBottom: '1px solid #eee', paddingBottom: '10px' }}><button onClick={() => { setAba('individual'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'individual' ? '#0070f3' : '#eee', color: aba === 'individual' ? '#fff' : '#333' }}>Cadastro Individual</button><button onClick={() => { setAba('massa'); setErro(null); setSucesso(null); }} disabled={carregando} style={{ flex: 1, padding: '12px', cursor: carregando ? 'not-allowed' : 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'massa' ? '#10b981' : '#eee', color: aba === 'massa' ? '#fff' : '#333' }}>Cadastro em Massa (Excel)</button></div>
 
         {erro && <div style={{ marginBottom: '24px', backgroundColor: '#fee2e2', color: '#b91c1c', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}><strong>Erro:</strong> {erro}</div>}
         {sucesso && <div style={{ marginBottom: '24px', backgroundColor: '#f0fdf4', color: '#15803d', border: '2px solid #22c55e', padding: '16px', borderRadius: '8px', textAlign: 'center', fontWeight: 'bold' }}>✅ {sucesso}</div>}
@@ -317,10 +271,7 @@ function App() {
           </form>
         ) : (
           <div>
-            <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>Passo 1: Planilha Modelo (Excel)</h3>
-                <button onClick={baixarExcelModelo} style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>📥 Baixar Planilha Modelo (.xlsx)</button>
-            </div>
+            <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}><h3 style={{ margin: '0 0 10px 0', fontSize: '18px' }}>Passo 1: Planilha Modelo (Excel)</h3><button onClick={baixarExcelModelo} style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>📥 Baixar Planilha Modelo (.xlsx)</button></div>
             <div style={{ marginBottom: '24px' }}><label style={{ display: 'block', fontWeight: '600', color: '#34495e', marginBottom: '8px' }}>Passo 2: Envie a Planilha Preenchida (.xlsx)</label><input type="file" accept=".xlsx, .xls" onChange={(e) => setExcelFile(e.target.files[0])} disabled={carregando} style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', width: '100%', boxSizing: 'border-box', backgroundColor: '#f8fafc' }} /></div>
             <button onClick={processarCadastroMassa} disabled={carregando || logMassa.length > 0} style={{ width: '100%', padding: '16px', backgroundColor: (carregando || logMassa.length > 0) ? '#bdc3c7' : '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '18px', cursor: (carregando || logMassa.length > 0) ? 'not-allowed' : 'pointer' }}> {carregando ? 'Processando Lote...' : '🚀 Iniciar Cadastro via Excel'} </button>
             {logMassa.length > 0 && (
@@ -333,27 +284,12 @@ function App() {
         )}
       </div>
 
-      {/* ================= MODAL DE HISTÓRICO ================= */}
+      {/* MODAL DE HISTÓRICO */}
       {mostrarHistorico && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', width: '90%', maxWidth: '800px', maxHeight: '80vh', borderRadius: '12px', padding: '30px', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, color: '#1e293b' }}>🕒 Histórico de Cadastros</h2>
-              <button onClick={() => setMostrarHistorico(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
-            </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              {historicoLocal.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#64748b', marginTop: '40px' }}>Nenhum cadastro realizado ainda neste navegador.</p>
-              ) : (
-                historicoLocal.map((registro) => (
-                  <div key={registro.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px', marginBottom: '15px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}><span style={{ fontWeight: 'bold', color: '#0f172a' }}>{registro.dataHora}</span><span style={{ backgroundColor: '#e0e7ff', color: '#4338ca', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>Lote: {registro.tipo}</span></div>
-                    <div style={{ fontSize: '14px', color: '#475569', marginBottom: '10px' }}><strong>Usuário:</strong> {registro.usuario} <br/><strong>Produtos Salvos:</strong> {registro.quantidade}</div>
-                    <details style={{ fontSize: '13px', color: '#64748b', cursor: 'pointer' }}><summary style={{ outline: 'none', fontWeight: 'bold', color: '#0070f3' }}>Ver produtos gerados</summary><ul style={{ marginTop: '10px', paddingLeft: '20px' }}>{registro.detalhes.map((item, idx) => (<li key={idx} style={{ marginBottom: '4px' }}><span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.sku}</span> - {item.descricao}</li>))}</ul></details>
-                  </div>
-                ))
-              )}
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}><h2 style={{ margin: 0, color: '#1e293b' }}>🕒 Histórico de Cadastros</h2><button onClick={() => setMostrarHistorico(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button></div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>{historicoLocal.length === 0 ? (<p style={{ textAlign: 'center', color: '#64748b', marginTop: '40px' }}>Nenhum cadastro realizado ainda neste navegador.</p>) : (historicoLocal.map((registro) => (<div key={registro.id} style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px', marginBottom: '15px' }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}><span style={{ fontWeight: 'bold', color: '#0f172a' }}>{registro.dataHora}</span><span style={{ backgroundColor: '#e0e7ff', color: '#4338ca', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>Lote: {registro.tipo}</span></div><div style={{ fontSize: '14px', color: '#475569', marginBottom: '10px' }}><strong>Usuário:</strong> {registro.usuario} <br/><strong>Produtos Salvos:</strong> {registro.quantidade}</div><details style={{ fontSize: '13px', color: '#64748b', cursor: 'pointer' }}><summary style={{ outline: 'none', fontWeight: 'bold', color: '#0070f3' }}>Ver produtos gerados</summary><ul style={{ marginTop: '10px', paddingLeft: '20px' }}>{registro.detalhes.map((item, idx) => (<li key={idx} style={{ marginBottom: '4px' }}><span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.sku}</span> - {item.descricao}</li>))}</ul></details></div>)))}</div>
           </div>
         </div>
       )}
