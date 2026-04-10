@@ -28,46 +28,61 @@ function App() {
 
   // ================= O NOVO LEÃO DE CHÁCARA + BANCO DE DADOS =================
   const processarLogin = async (session) => {
-    if (!session?.user?.email) {
-      setUsuarioLogado(null);
-      setPerfilUsuario(null);
+    try {
+      if (!session?.user?.email) {
+        setUsuarioLogado(null);
+        setPerfilUsuario(null);
+        return; // Sai da função, mas o 'finally' lá embaixo garante que o loading suma
+      }
+
+      const email = session.user.email;
+
+      if (!email.endsWith('@biscoite.com.br')) {
+        await supabase.auth.signOut();
+        setUsuarioLogado(null);
+        setPerfilUsuario(null);
+        setErroLogin("Acesso restrito! Use o e-mail corporativo da Biscoitê.");
+        return;
+      }
+
+      setUsuarioLogado(email);
+      setErroLogin(null);
+
+      // Usar maybeSingle() impede que o Supabase jogue um erro crítico na nossa cara 
+      // caso o usuário por algum motivo demore milissegundos a mais pra responder
+      let { data: perfilData, error: erroBusca } = await supabase
+        .from('perfis')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (erroBusca) throw erroBusca;
+
+      if (!perfilData) {
+        const { data: novoPerfil, error: erroInsert } = await supabase
+          .from('perfis')
+          .insert([{ email: email, setor: 'PRODUTOS', status: 'pendente' }])
+          .select()
+          .single();
+        
+        if (erroInsert) throw erroInsert;
+        perfilData = novoPerfil;
+      }
+
+      setPerfilUsuario(perfilData);
+      
+      // Se ele for TI e tiver aprovado, puxa a lista da galera
+      if (perfilData?.status === 'aprovado' && perfilData?.setor === 'TI') {
+        carregarListaUsuarios();
+      }
+
+    } catch (err) {
+      console.error("Erro interno no login:", err);
+      setErroLogin("Não foi possível carregar as permissões. Dê um F5 ou faça o login novamente.");
+    } finally {
+      // ISSO AQUI SALVA VIDAS: O loading VAI sumir, aconteça o que acontecer.
       setCarregandoAuth(false);
-      return;
     }
-
-    const email = session.user.email;
-
-    if (!email.endsWith('@biscoite.com.br')) {
-      await supabase.auth.signOut();
-      setUsuarioLogado(null);
-      setPerfilUsuario(null);
-      setErroLogin("Acesso restrito! Use o e-mail corporativo da Biscoitê.");
-      setCarregandoAuth(false);
-      return;
-    }
-
-    setUsuarioLogado(email);
-    setErroLogin(null);
-
-    // Bate no banco e pergunta: Esse cara já existe na tabela de perfis?
-    let { data: perfilData, error } = await supabase.from('perfis').select('*').eq('email', email).single();
-
-    if (!perfilData) {
-      // Se não existe, cria ele como PENDENTE e setor PRODUTOS (padrão inicial)
-      const { data: novoPerfil } = await supabase.from('perfis').insert([
-        { email: email, setor: 'PRODUTOS', status: 'pendente' }
-      ]).select().single();
-      perfilData = novoPerfil;
-    }
-
-    setPerfilUsuario(perfilData);
-    
-    // Se ele for TI e tiver aprovado, já puxa a lista da galera pra ele gerenciar
-    if (perfilData?.status === 'aprovado' && perfilData?.setor === 'TI') {
-      carregarListaUsuarios();
-    }
-
-    setCarregandoAuth(false);
   };
 
   useEffect(() => {
