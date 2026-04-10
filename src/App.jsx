@@ -2,21 +2,23 @@ import { useState, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 
+// Conexão com o Supabase
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
-  // --- ESTADOS DE AUTENTICAÇÃO E PERFIL ---
+  // ================= ESTADOS DO SISTEMA =================
+  // Autenticação e Perfil
   const [usuarioLogado, setUsuarioLogado] = useState(null);
-  const [perfilUsuario, setPerfilUsuario] = useState(null); // Guarda se é TI, PRODUTOS, pendente...
+  const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [erroLogin, setErroLogin] = useState(null);
   const [carregandoAuth, setCarregandoAuth] = useState(true);
 
-  // --- ESTADOS DO PAINEL MASTER (TI) ---
+  // Painel Master (TI)
   const [listaUsuarios, setListaUsuarios] = useState([]);
 
-  // --- ESTADOS DO SISTEMA ANTIGO ---
+  // Estados Antigos do Gerador (Mantidos para não quebrar a tela)
   const [aba, setAba] = useState('individual'); 
   const [formData, setFormData] = useState({ descricao: '', unidade: 'UN', preco: '', prefixo: '', ncm: '' });
   const [excelFile, setExcelFile] = useState(null);
@@ -26,17 +28,19 @@ function App() {
   const [erro, setErro] = useState(null);
   const [sucesso, setSucesso] = useState(null);
 
-  // ================= O NOVO LEÃO DE CHÁCARA + BANCO DE DADOS =================
+  // ================= LÓGICA DE LOGIN (BLINDADA) =================
   const processarLogin = async (session) => {
     try {
+      // Se não tem sessão ativa, limpa tudo e libera a tela
       if (!session?.user?.email) {
         setUsuarioLogado(null);
         setPerfilUsuario(null);
-        return; // Sai da função, mas o 'finally' lá embaixo garante que o loading suma
+        return; 
       }
 
       const email = session.user.email;
 
+      // Leão de Chácara: Verifica o domínio
       if (!email.endsWith('@biscoite.com.br')) {
         await supabase.auth.signOut();
         setUsuarioLogado(null);
@@ -48,8 +52,7 @@ function App() {
       setUsuarioLogado(email);
       setErroLogin(null);
 
-      // Usar maybeSingle() impede que o Supabase jogue um erro crítico na nossa cara 
-      // caso o usuário por algum motivo demore milissegundos a mais pra responder
+      // Bate no banco com maybeSingle() para evitar erros
       let { data: perfilData, error: erroBusca } = await supabase
         .from('perfis')
         .select('*')
@@ -58,6 +61,7 @@ function App() {
 
       if (erroBusca) throw erroBusca;
 
+      // Se é o primeiro acesso, cadastra como PRODUTOS (Pendente)
       if (!perfilData) {
         const { data: novoPerfil, error: erroInsert } = await supabase
           .from('perfis')
@@ -71,23 +75,38 @@ function App() {
 
       setPerfilUsuario(perfilData);
       
-      // Se ele for TI e tiver aprovado, puxa a lista da galera
+      // Se for a TI aprovada, puxa a lista de usuários para o painel Master
       if (perfilData?.status === 'aprovado' && perfilData?.setor === 'TI') {
         carregarListaUsuarios();
       }
 
     } catch (err) {
-      console.error("Erro interno no login:", err);
-      setErroLogin("Não foi possível carregar as permissões. Dê um F5 ou faça o login novamente.");
+      console.error("Erro no processamento do login:", err);
+      setErroLogin("Falha ao carregar suas permissões. Tente novamente.");
     } finally {
-      // ISSO AQUI SALVA VIDAS: O loading VAI sumir, aconteça o que acontecer.
+      // A REDE DE SEGURANÇA: Independente do que aconteça, a tela de loading SOME!
       setCarregandoAuth(false);
     }
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => processarLogin(session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => processarLogin(session));
+    // Função assíncrona segura para a primeira checagem (Mata o bug do F5)
+    const checagemInicial = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await processarLogin(session);
+      } catch (e) {
+        setCarregandoAuth(false);
+      }
+    };
+    
+    checagemInicial();
+
+    // Escuta mudanças de login/logout
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      processarLogin(session);
+    });
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -98,10 +117,11 @@ function App() {
   };
 
   const fazerLogout = async () => {
+    setCarregandoAuth(true);
     await supabase.auth.signOut();
   };
 
-  // ================= FUNÇÕES DO PAINEL MASTER (TI) =================
+  // ================= PAINEL MASTER (TI) =================
   const carregarListaUsuarios = async () => {
     const { data } = await supabase.from('perfis').select('*').order('criado_em', { ascending: false });
     setListaUsuarios(data || []);
@@ -109,29 +129,45 @@ function App() {
 
   const atualizarPermissaoUsuario = async (id, novoStatus, novoSetor) => {
     await supabase.from('perfis').update({ status: novoStatus, setor: novoSetor }).eq('id', id);
-    carregarListaUsuarios(); // Atualiza a tela
+    carregarListaUsuarios();
     alert("Permissões atualizadas com sucesso!");
   };
 
-  // ================= FUNÇÕES DO GERADOR OMIE (Mantidas iguais por enquanto) =================
+  // ================= FUNÇÕES DO GERADOR OMIE (Mantidas para a aba provisória) =================
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-  // ... (A lógica de SKU, CSV, Excel continua a mesma que já construímos, vou ocultar as lógicas longas pra não poluir, 
-  // mas como você vai sobrepor o arquivo, deixei um mock aqui pra não quebrar. O foco é a casca nova!)
 
-  // Se a tela estiver carregando a autenticação
+  // (Simulando as funções antigas para não quebrar o código enquanto montamos o Kanban)
+  const descobrirProximoCodigo = () => { return "400999" };
+  const cadastrarProdutoIndividual = (e) => { e.preventDefault(); alert("Em transição para o modelo Kanban!"); };
+  const baixarExcelModelo = () => { alert("Recurso em atualização"); };
+  const processarCadastroMassa = () => { alert("Recurso em atualização"); };
+  const qtdSucesso = logMassa.filter(log => log.status === 'Sucesso').length;
+
+  // ================= TELAS DA APLICAÇÃO =================
+
+  // 1. TELA DE CARREGAMENTO INICIAL
   if (carregandoAuth) {
-    return <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}><h2>⏳ Carregando sistema Biscoitê...</h2></div>;
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: '"Segoe UI", sans-serif' }}>
+        <div style={{ textAlign: 'center', color: '#64748b' }}>
+          <div style={{ fontSize: '40px', marginBottom: '15px' }}>⏳</div>
+          <h2>Carregando sistema Biscoitê...</h2>
+        </div>
+      </div>
+    );
   }
 
-  // ================= TELA DE LOGIN =================
+  // 2. TELA DE LOGIN
   if (!usuarioLogado) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Segoe UI", sans-serif' }}>
         <div style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
           <h1 style={{ color: '#2c3e50', marginBottom: '10px' }}>📦 Sistema PLM - Biscoitê</h1>
           <p style={{ color: '#7f8c8d', marginBottom: '30px' }}>Acesso exclusivo corporativo.</p>
-          {erroLogin && <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '15px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: 'bold' }}>{erroLogin}</div>}
-          <button onClick={fazerLoginGoogle} style={{ width: '100%', padding: '14px', backgroundColor: '#ffffff', color: '#3f3f3f', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          
+          {erroLogin && <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '15px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: 'bold', border: '1px solid #fca5a5' }}>{erroLogin}</div>}
+          
+          <button onClick={fazerLoginGoogle} style={{ width: '100%', padding: '14px', backgroundColor: '#ffffff', color: '#3f3f3f', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google Logo" style={{ width: '20px', height: '20px' }} />
             Entrar com Google Biscoitê
           </button>
@@ -140,7 +176,7 @@ function App() {
     );
   }
 
-  // ================= A SALA DE ESPERA =================
+  // 3. A SALA DE ESPERA (Pendente)
   if (perfilUsuario?.status === 'pendente') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Segoe UI", sans-serif' }}>
@@ -157,7 +193,7 @@ function App() {
     );
   }
 
-  // ================= TELA PRINCIPAL (APROVADOS) =================
+  // 4. TELA PRINCIPAL (APROVADOS)
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f4f7f6', padding: '20px', fontFamily: '"Segoe UI", sans-serif' }}>
       
@@ -175,7 +211,7 @@ function App() {
         {/* NAVEGAÇÃO DE ABAS */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '32px', borderBottom: '2px solid #f1f5f9', paddingBottom: '15px' }}>
           <button onClick={() => setAba('individual')} style={{ flex: 1, padding: '12px', cursor: 'pointer', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', backgroundColor: aba === 'individual' ? '#0f172a' : '#f8fafc', color: aba === 'individual' ? '#fff' : '#64748b' }}>
-            Gerador de Códigos
+            📋 Kanban de Produtos
           </button>
           
           {/* ABA EXCLUSIVA DO MASTER DA TI */}
@@ -189,16 +225,18 @@ function App() {
         {/* --- CONTEÚDO DA ABA SELECIONADA --- */}
         
         {aba === 'individual' && (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-             <h2 style={{ color: '#475569' }}>🚧 Aqui ficará a tela de cadastro atual...</h2>
-             <p style={{ color: '#94a3b8' }}>(Mantida igual, logo vamos trocá-la pelo painel Kanban)</p>
+          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '2px dashed #cbd5e1' }}>
+             <h2 style={{ color: '#475569', margin: '0 0 10px 0' }}>🚧 Preparando o Terreno</h2>
+             <p style={{ color: '#64748b', fontSize: '16px', maxWidth: '600px', margin: '0 auto' }}>
+               A infraestrutura de segurança está 100% pronta. O próximo passo é construir a tela onde o time de Produtos vai preencher os dados iniciais (Nome, Validade, Dimensões, etc.) para solicitar o código Omie para a TI.
+             </p>
           </div>
         )}
 
         {/* --- PAINEL MASTER DA TI --- */}
         {aba === 'admin' && perfilUsuario?.setor === 'TI' && (
           <div>
-            <h2 style={{ margin: '0 0 20px 0', color: '#1e293b' }}>Gestão de Usuários</h2>
+            <h2 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>Gestão de Usuários</h2>
             <p style={{ color: '#64748b', marginBottom: '30px' }}>Aprove novos acessos e defina em qual setor cada usuário trabalha para o fluxo Kanban.</p>
 
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px' }}>
@@ -233,7 +271,7 @@ function App() {
                         style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                       >
                         <option value="PRODUTOS">PRODUTOS (Solicitações)</option>
-                        <option value="FINANCEIRO">FINANCEIRO / SUPPLY (Complemento)</option>
+                        <option value="FINANCEIRO">FINANCEIRO / SUPPLY</option>
                         <option value="TI">TI (Aprovações Master)</option>
                       </select>
                     </td>
