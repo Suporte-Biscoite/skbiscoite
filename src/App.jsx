@@ -15,41 +15,61 @@ function App() {
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
-  // ================= FUNÇÕES AUXILIARES =================
+  // ================= FUNÇÕES AUXILIARES OTIMIZADAS =================
+  
   const buscarTodosCodigosOmie = async () => {
-    let todosCodigos = [];
-    let paginaAtual = 1;
-    let totalPaginas = 1;
+    const res1 = await fetch(`/api/codigos?pagina=1`);
+    if (!res1.ok) throw new Error('Falha ao comunicar com a API do Omie.');
+    
+    const data1 = await res1.json();
+    let todosCodigos = [...data1.codigos];
+    const totalPaginas = data1.total_paginas;
 
-    do {
-      const res = await fetch(`/api/codigos?pagina=${paginaAtual}`);
-      if (!res.ok) throw new Error('Falha ao comunicar com a API do Omie.');
-      
-      const data = await res.json();
-      todosCodigos = [...todosCodigos, ...data.codigos];
-      totalPaginas = data.total_paginas;
-      paginaAtual++;
-    } while (paginaAtual <= totalPaginas);
-
+    if (totalPaginas > 1) {
+      const promessas = [];
+      for (let p = 2; p <= totalPaginas; p++) {
+        promessas.push(fetch(`/api/codigos?pagina=${p}`).then(r => r.json()));
+      }
+      const resultados = await Promise.all(promessas);
+      resultados.forEach(req => {
+        if (req.codigos) todosCodigos = [...todosCodigos, ...req.codigos];
+      });
+    }
     return todosCodigos;
   };
 
+  // 🔥 MOTOR CORRIGIDO: REGRA ESTrita DE 7 DÍGITOS
   const calcularProximoSku = (todosCodigos, prefixo) => {
-    const codigosDaCategoria = todosCodigos
-      .filter(codigo => codigo.startsWith(prefixo))
-      .map(codigo => parseInt(codigo, 10))
-      .filter(num => !isNaN(num));
+    const prefixoStr = String(prefixo).trim(); // Ex: "400"
+    
+    // Regex: Exige que comece com o prefixo e tenha EXATAMENTE 4 dígitos após ele (Total = 7 dígitos)
+    const regex = new RegExp(`^${prefixoStr}\\d{4}$`);
+    
+    const sequenciasDaCategoria = todosCodigos
+      .filter(prod => {
+        // Se a API retornar apenas a string (array de strings) ou objeto (prod.codigo)
+        const cod = typeof prod === 'string' ? prod : prod.codigo;
+        return cod && regex.test(String(cod).trim());
+      })
+      .map(prod => {
+        const cod = typeof prod === 'string' ? prod : prod.codigo;
+        // Corta os 3 primeiros dígitos e converte o final para número (ex: "4000010" -> 10)
+        return parseInt(String(cod).trim().slice(3), 10);
+      });
 
-    if (codigosDaCategoria.length > 0) {
-      return Math.max(...codigosDaCategoria) + 1;
+    if (sequenciasDaCategoria.length > 0) {
+      const maiorSequencia = Math.max(...sequenciasDaCategoria);
+      const proximaSequencia = maiorSequencia + 1;
+      
+      // Adiciona os zeros à esquerda para manter exatamente 4 dígitos na sequência (ex: 10 -> "0010")
+      return prefixoStr + proximaSequencia.toString().padStart(4, '0');
     } else {
-      return parseInt(prefixo + "0001", 10);
+      // Primeiro código da categoria
+      return prefixoStr + "0001";
     }
   };
 
   const cadastrarNoOmie = async (codigo, descricao, ncm) => {
-    // Força regras de negócio
-    const descFormatada = descricao.toUpperCase().trim();
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
 
     const res = await fetch('/api/cadastrar', {
@@ -57,7 +77,7 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         codigo: codigo,
-        descricao: descFormatada,
+        descricao: descricao, 
         unidade: "UN",
         preco: 0,
         ncm: ncmFormatado 
@@ -79,13 +99,25 @@ function App() {
     setErroInd(null);
 
     try {
+      const descFormatada = formInd.descricao.toUpperCase().trim();
       const todosCodigos = await buscarTodosCodigosOmie();
-      const proximoNumero = calcularProximoSku(todosCodigos, formInd.categoria);
-      const novoSKU = proximoNumero.toString();
+      
+      // Trava de segurança para não duplicar nome
+      const produtoExistente = todosCodigos.find(prod => {
+        const desc = prod.descricao || '';
+        return desc.toUpperCase().trim() === descFormatada;
+      });
 
-      await cadastrarNoOmie(novoSKU, formInd.descricao, formInd.ncm);
+      if (produtoExistente) {
+        throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
+      }
+
+      // Calcula o SKU exatamente com 7 dígitos
+      const novoSKU = calcularProximoSku(todosCodigos, formInd.categoria);
+
+      await cadastrarNoOmie(novoSKU, descFormatada, formInd.ncm);
       setSkuGerado(novoSKU);
-      setFormInd({ categoria: '', descricao: '', ncm: '' }); // Limpa form
+      setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
       setErroInd(err.message);
     } finally {
@@ -118,7 +150,7 @@ function App() {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(worksheet);
       setDadosPlanilha(json);
-      setLogsMassa([]); // Limpa logs anteriores
+      setLogsMassa([]); 
     };
     reader.readAsArrayBuffer(file);
   };
@@ -129,16 +161,12 @@ function App() {
     setLogsMassa([]);
 
     try {
-      // 1. Busca todos os códigos UMA vez para economizar requisições
       const todosCodigos = await buscarTodosCodigosOmie();
-      
-      // 2. Cria um rastreador em memória para não repetir códigos na mesma categoria
-      let maxCodesPorCategoria = {};
 
       for (let i = 0; i < dadosPlanilha.length; i++) {
         const linha = dadosPlanilha[i];
         const catStr = String(linha.CATEGORIA || '').trim();
-        const descStr = String(linha.DESCRICAO || '').trim();
+        const descStr = String(linha.DESCRICAO || '').toUpperCase().trim();
         const ncmStr = linha.NCM ? String(linha.NCM).trim() : '';
 
         if (!catStr || !descStr) {
@@ -146,18 +174,26 @@ function App() {
           continue;
         }
 
-        // Se ainda não mapeamos o maior código dessa categoria na memória, calculamos
-        if (!maxCodesPorCategoria[catStr]) {
-          maxCodesPorCategoria[catStr] = calcularProximoSku(todosCodigos, catStr) - 1; 
+        const produtoExistente = todosCodigos.find(prod => {
+           const desc = prod.descricao || '';
+           return desc.toUpperCase().trim() === descStr;
+        });
+
+        if (produtoExistente) {
+          setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: `Bloqueado. Já existe no Omie.` }]);
+          continue;
         }
 
-        // Incrementa 1 na memória e gera o código
-        maxCodesPorCategoria[catStr]++;
-        const novoSKU = maxCodesPorCategoria[catStr].toString();
+        // Calcula o próximo (seja o primeiro da linha ou a continuação)
+        const novoSKU = calcularProximoSku(todosCodigos, catStr);
 
         try {
           await cadastrarNoOmie(novoSKU, descStr, ncmStr);
-          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr.toUpperCase(), status: 'Sucesso' }]);
+          
+          // Adiciona o produto criado na memória para a próxima linha da planilha saber que ele existe e incrementar o número
+          todosCodigos.push({ codigo: novoSKU, descricao: descStr });
+          
+          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: 'Sucesso' }]);
         } catch (err) {
           setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: 'Erro', msg: err.message }]);
         }
@@ -166,7 +202,7 @@ function App() {
       alert("Erro crítico ao varrer o Omie: " + err.message);
     } finally {
       setProcMassa(false);
-      setDadosPlanilha([]); // Limpa o estado da planilha após rodar
+      setDadosPlanilha([]); 
     }
   };
 
@@ -178,7 +214,6 @@ function App() {
         <div style={{ marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0, color: '#0F2041' }}>Gerador de SKU - TI</h2>
           
-          {/* BOTÕES DE ABA */}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={() => setModo('individual')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'individual' ? '#0F2041' : '#E5E0D8', color: modo === 'individual' ? '#fff' : '#0F2041' }}>
               Individual
@@ -189,7 +224,6 @@ function App() {
           </div>
         </div>
 
-        {/* ABA: INDIVIDUAL */}
         {modo === 'individual' && (
           <div>
             {erroInd && <div style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontWeight: 'bold' }}>Erro: {erroInd}</div>}
@@ -229,7 +263,6 @@ function App() {
           </div>
         )}
 
-        {/* ABA: EM MASSA */}
         {modo === 'massa' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f1f5f9', padding: '15px', borderRadius: '8px', border: '1px dashed #cbd5e1', marginBottom: '20px' }}>
@@ -253,7 +286,6 @@ function App() {
               </button>
             )}
 
-            {/* LOGS DE RESULTADOS */}
             {logsMassa.length > 0 && (
               <div style={{ marginTop: '30px' }}>
                 <h3 style={{ borderBottom: '2px solid #F0ECE4', paddingBottom: '10px', color: '#0F2041' }}>Resultados da Importação:</h3>
