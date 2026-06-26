@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
 function App() {
-  const [modo, setModo] = useState('individual'); // 'individual' ou 'massa'
+  const [modo, setModo] = useState('individual'); 
   
   // ================= ESTADOS DO INDIVIDUAL =================
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
@@ -38,38 +38,35 @@ function App() {
     return todosCodigos;
   };
 
-  // 🔥 MOTOR CORRIGIDO: REGRA ESTrita DE 7 DÍGITOS
   const calcularProximoSku = (todosCodigos, prefixo) => {
-    const prefixoStr = String(prefixo).trim(); // Ex: "400"
-    
-    // Regex: Exige que comece com o prefixo e tenha EXATAMENTE 4 dígitos após ele (Total = 7 dígitos)
+    const prefixoStr = String(prefixo).trim(); 
     const regex = new RegExp(`^${prefixoStr}\\d{4}$`);
     
     const sequenciasDaCategoria = todosCodigos
       .filter(prod => {
-        // Se a API retornar apenas a string (array de strings) ou objeto (prod.codigo)
         const cod = typeof prod === 'string' ? prod : prod.codigo;
         return cod && regex.test(String(cod).trim());
       })
       .map(prod => {
         const cod = typeof prod === 'string' ? prod : prod.codigo;
-        // Corta os 3 primeiros dígitos e converte o final para número (ex: "4000010" -> 10)
-        return parseInt(String(cod).trim().slice(3), 10);
+        return parseInt(String(cod).trim().slice(prefixoStr.length), 10);
       });
 
-    if (sequenciasDaCategoria.length > 0) {
-      const maiorSequencia = Math.max(...sequenciasDaCategoria);
-      const proximaSequencia = maiorSequencia + 1;
-      
-      // Adiciona os zeros à esquerda para manter exatamente 4 dígitos na sequência (ex: 10 -> "0010")
-      return prefixoStr + proximaSequencia.toString().padStart(4, '0');
-    } else {
-      // Primeiro código da categoria
-      return prefixoStr + "0001";
+    sequenciasDaCategoria.sort((a, b) => a - b);
+    let proximaSequencia = 1; 
+
+    for (let num of sequenciasDaCategoria) {
+      if (num === proximaSequencia) {
+        proximaSequencia++;
+      } else if (num > proximaSequencia) {
+        break;
+      }
     }
+
+    return prefixoStr + proximaSequencia.toString().padStart(4, '0');
   };
 
-  const cadastrarNoOmie = async (codigo, descricao, ncm) => {
+  const cadastrarNoOmie = async (codigo, descricao, ncm, acao) => {
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
 
     const res = await fetch('/api/cadastrar', {
@@ -80,7 +77,8 @@ function App() {
         descricao: descricao, 
         unidade: "UN",
         preco: 0,
-        ncm: ncmFormatado 
+        ncm: ncmFormatado,
+        acao: acao // 'IncluirProduto' ou 'AlterarProduto'
       })
     });
 
@@ -88,6 +86,9 @@ function App() {
     if (!res.ok) throw new Error(data.error || 'O Omie recusou o cadastro.');
     return data;
   };
+
+  // Nomes coringas que o sistema pode sobrescrever no Omie
+  const descricoesStandBy = ['PRODUTO INDEFINIDO', 'PRODUTO INDENIDO', 'CÓDIGO EM STAND-BY'];
 
   // ================= LÓGICA DO MODO INDIVIDUAL =================
   const handleChangeInd = (e) => setFormInd({ ...formInd, [e.target.name]: e.target.value });
@@ -102,7 +103,6 @@ function App() {
       const descFormatada = formInd.descricao.toUpperCase().trim();
       const todosCodigos = await buscarTodosCodigosOmie();
       
-      // Trava de segurança para não duplicar nome
       const produtoExistente = todosCodigos.find(prod => {
         const desc = prod.descricao || '';
         return desc.toUpperCase().trim() === descFormatada;
@@ -112,10 +112,25 @@ function App() {
         throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
       }
 
-      // Calcula o SKU exatamente com 7 dígitos
-      const novoSKU = calcularProximoSku(todosCodigos, formInd.categoria);
+      // Procura primeiro por um código "INDEFINIDO" ou "INDENIDO"
+      const produtoStandBy = todosCodigos.find(prod => {
+        const desc = (prod.descricao || '').toUpperCase().trim();
+        const cod = (prod.codigo || '').trim();
+        return cod.startsWith(formInd.categoria) && descricoesStandBy.includes(desc);
+      });
 
-      await cadastrarNoOmie(novoSKU, descFormatada, formInd.ncm);
+      let novoSKU;
+      let acaoOmie;
+
+      if (produtoStandBy) {
+        novoSKU = produtoStandBy.codigo.trim();
+        acaoOmie = "AlterarProduto"; // Reaproveita o código
+      } else {
+        novoSKU = calcularProximoSku(todosCodigos, formInd.categoria);
+        acaoOmie = "IncluirProduto"; // Usa o próximo buraco disponível
+      }
+
+      await cadastrarNoOmie(novoSKU, descFormatada, formInd.ncm, acaoOmie);
       setSkuGerado(novoSKU);
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
@@ -184,16 +199,31 @@ function App() {
           continue;
         }
 
-        // Calcula o próximo (seja o primeiro da linha ou a continuação)
-        const novoSKU = calcularProximoSku(todosCodigos, catStr);
+        const produtoStandBy = todosCodigos.find(prod => {
+          const desc = (prod.descricao || '').toUpperCase().trim();
+          const cod = (prod.codigo || '').trim();
+          return cod.startsWith(catStr) && descricoesStandBy.includes(desc);
+        });
+
+        let novoSKU;
+        let acaoOmie;
+
+        if (produtoStandBy) {
+          novoSKU = produtoStandBy.codigo.trim();
+          acaoOmie = "AlterarProduto";
+          // Atualiza a memória para evitar que o próximo item da planilha pegue o mesmo stand-by
+          produtoStandBy.descricao = descStr; 
+        } else {
+          novoSKU = calcularProximoSku(todosCodigos, catStr);
+          acaoOmie = "IncluirProduto";
+          // Ocupa o buraco na memória
+          todosCodigos.push({ codigo: novoSKU, descricao: descStr }); 
+        }
 
         try {
-          await cadastrarNoOmie(novoSKU, descStr, ncmStr);
-          
-          // Adiciona o produto criado na memória para a próxima linha da planilha saber que ele existe e incrementar o número
-          todosCodigos.push({ codigo: novoSKU, descricao: descStr });
-          
-          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: 'Sucesso' }]);
+          await cadastrarNoOmie(novoSKU, descStr, ncmStr, acaoOmie);
+          const statusTxt = acaoOmie === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso';
+          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: statusTxt }]);
         } catch (err) {
           setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: 'Erro', msg: err.message }]);
         }
@@ -291,9 +321,10 @@ function App() {
                 <h3 style={{ borderBottom: '2px solid #F0ECE4', paddingBottom: '10px', color: '#0F2041' }}>Resultados da Importação:</h3>
                 <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {logsMassa.map((log, i) => (
-                    <div key={i} style={{ padding: '10px', borderRadius: '6px', backgroundColor: log.status === 'Sucesso' ? '#dcfce7' : '#fee2e2', border: `1px solid ${log.status === 'Sucesso' ? '#bbf7d0' : '#fecaca'}`, fontSize: '14px' }}>
-                      <strong>{log.status === 'Sucesso' ? '✅' : '❌'} {log.sku ? `SKU: ${log.sku}` : 'Erro'} </strong> 
+                    <div key={i} style={{ padding: '10px', borderRadius: '6px', backgroundColor: log.status.includes('Sucesso') ? '#dcfce7' : '#fee2e2', border: `1px solid ${log.status.includes('Sucesso') ? '#bbf7d0' : '#fecaca'}`, fontSize: '14px' }}>
+                      <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku ? `SKU: ${log.sku}` : 'Erro'} </strong> 
                       - {log.desc} {log.msg && `(Motivo: ${log.msg})`}
+                      <span style={{float: 'right', fontSize: '12px', color: '#64748b'}}>{log.status}</span>
                     </div>
                   ))}
                 </div>

@@ -8,12 +8,13 @@ export default async function handler(req, res) {
 
   if (!APP_KEY || !APP_SECRET) return res.status(500).json({ error: 'Credenciais ausentes na Vercel.' });
 
-  // Pegando a variável NCM nova
-  const { codigo, descricao, unidade, preco, ncm } = req.body;
+  // Recebemos a "acao" que pode ser "IncluirProduto" (novo buraco) ou "AlterarProduto" (sobrescrever stand-by)
+  const { codigo, descricao, unidade, preco, ncm, acao } = req.body;
+  const omieCall = acao || "IncluirProduto";
 
   try {
     const response = await axios.post('https://app.omie.com.br/api/v1/geral/produtos/', {
-      call: "IncluirProduto",
+      call: omieCall,
       app_key: APP_KEY,
       app_secret: APP_SECRET,
       param: [{
@@ -22,16 +23,15 @@ export default async function handler(req, res) {
         descricao: descricao,
         unidade: unidade,
         valor_unitario: parseFloat(preco) || 0,
-        ncm: ncm // <-- Enviando pro Omie
+        ncm: ncm
       }]
     });
 
     res.status(200).json({ sucesso: true, omie_id: response.data.codigo_produto });
 
   } catch (error) {
-    // Melhoria para mostrar no front-end o erro exato que o Omie deu (como o do NCM)
-    const msgErroOmie = error.response?.data?.faultstring || "O Omie recusou o cadastro.";
-    console.error("Erro ao incluir no Omie:", msgErroOmie);
+    const msgErroOmie = error.response?.data?.faultstring || "O Omie recusou a operação.";
+    console.error("Erro no Omie:", msgErroOmie);
     res.status(500).json({ error: msgErroOmie });
   }
 }
