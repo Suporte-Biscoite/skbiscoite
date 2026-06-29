@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import * as XLSX from 'xlsx';
-import './App.css'; // O CSS da Biscoitê
+import * as XLSX from 'xlsx'; // Usado para LER a planilha do utilizador
+import ExcelJS from 'exceljs'; // Usado para CRIAR a planilha modelo bonita
+import './App.css';
 
 function App() {
   const [modo, setModo] = useState('individual'); 
@@ -89,7 +90,7 @@ function App() {
     return data;
   };
 
-  // ================= HANDLERS =================
+  // ================= HANDLERS INDIVIDUAL =================
   const handleChangeInd = (e) => setFormInd({ ...formInd, [e.target.name]: e.target.value });
 
   const gerarECadastrarIndividual = async (e) => {
@@ -117,12 +118,81 @@ function App() {
     }
   };
 
-  const baixarPlanilhaModelo = () => {
-    const dadosModelo = [{ CATEGORIA: "400", DESCRICAO: "PRODUTO DE TESTE EM STAND-BY", NCM: "1905.90.20" }];
-    const ws = XLSX.utils.json_to_sheet(dadosModelo);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Modelo SKU");
-    XLSX.writeFile(wb, "Modelo_Criacao_SKUs.xlsx");
+  // ================= HANDLERS MASSA =================
+  
+  // Nova função para gerar a planilha com design fiel ao Omie
+  const baixarPlanilhaModelo = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Modelo SKU Biscoitê');
+
+    // Cabeçalho Principal (Vermelho Omie)
+    worksheet.mergeCells('A1:C1');
+    const titleRow = worksheet.getCell('A1');
+    titleRow.value = 'Planilha de Importação de SKUs';
+    titleRow.font = { name: 'Arial', size: 16, color: { argb: 'FFFFFFFF' }, bold: true };
+    titleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF4B4B' } };
+    titleRow.alignment = { vertical: 'middle', horizontal: 'left' };
+    worksheet.getRow(1).height = 30;
+
+    // Subtítulo
+    worksheet.mergeCells('A2:C2');
+    const subTitleRow = worksheet.getCell('A2');
+    subTitleRow.value = 'Módulo: Gestão de Produtos Biscoitê';
+    subTitleRow.font = { name: 'Arial', size: 11, color: { argb: 'FFFFFFFF' } };
+    subTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF4B4B' } };
+    subTitleRow.alignment = { vertical: 'middle', horizontal: 'left' };
+    worksheet.getRow(2).height = 20;
+
+    // Linha de Instruções (Fundo rosado/claro)
+    const instructions = [
+      '(obrigatório)\nPrefixo numérico da categoria\n(ex: 400)',
+      '(obrigatório)\nNome final do produto em letras maiúsculas',
+      '(opcional)\nInforme o NCM do produto\n(Padrão: 1905.90.20)'
+    ];
+    const row3 = worksheet.addRow(instructions);
+    row3.height = 60;
+    row3.eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 9, color: { argb: 'FF555555' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE5E5' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style:'thin', color: { argb:'FFCCCCCC' } },
+        left: { style:'thin', color: { argb:'FFCCCCCC' } },
+        bottom: { style:'thin', color: { argb:'FFCCCCCC' } },
+        right: { style:'thin', color: { argb:'FFCCCCCC' } }
+      };
+    });
+
+    // Linha de Cabeçalhos Técnicos (Negrito)
+    const headers = ['CATEGORIA', 'DESCRICAO', 'NCM'];
+    const row4 = worksheet.addRow(headers);
+    row4.height = 25;
+    row4.eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 10, bold: true };
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      cell.border = {
+        top: { style:'thick', color: { argb:'FF000000' } },
+        bottom: { style:'thick', color: { argb:'FF000000' } }
+      };
+    });
+
+    // Exemplo de preenchimento
+    worksheet.addRow(['400', 'PRODUTO DE TESTE EM STAND-BY', '1905.90.20']);
+
+    // Largura das Colunas
+    worksheet.getColumn(1).width = 25;
+    worksheet.getColumn(2).width = 50;
+    worksheet.getColumn(3).width = 25;
+
+    // Dispara o Download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'Modelo_Criacao_SKUs_Omie.xlsx';
+    anchor.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const lerArquivoUpload = (e) => {
@@ -132,7 +202,9 @@ function App() {
     reader.onload = (evt) => {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      setDadosPlanilha(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]));
+      // A leitura pula as linhas de cabeçalho cosmético para pegar os dados na linha 4 em diante
+      const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { range: 3 });
+      setDadosPlanilha(json);
       setLogsMassa([]); 
     };
     reader.readAsArrayBuffer(file);
@@ -153,7 +225,7 @@ function App() {
         const ncmStr = linha.NCM ? String(linha.NCM).trim() : '';
 
         if (!catStr || !descStr) {
-          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]);
+          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados na tabela.` }]);
           continue;
         }
 
@@ -189,7 +261,7 @@ function App() {
     }
   };
 
-  // ================= UI / RENDER (LIMPO) =================
+  // ================= UI RENDER =================
   return (
     <div className="app-container">
       <div className="main-card">
@@ -255,17 +327,20 @@ function App() {
 
         {modo === 'massa' && (
           <div className="tab-content">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-              <div className="input-wrapper">
-                <label className="input-label">Passo 1: Prepare a Planilha</label>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Colunas obrigatórias: CATEGORIA, DESCRICAO, NCM</span>
+            {/* O Passo 1 agora tem uma caixa que respira e não esmaga o botão */}
+            <div className="step-container">
+              <div className="step-text">
+                <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Passo 1: Baixe o modelo padrão</p>
+                <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
+                  A nossa planilha modelo agora é estruturada com cabeçalhos informativos idênticos ao padrão do ERP Omie.
+                </small>
               </div>
-              <button onClick={baixarPlanilhaModelo} className="btn-secondary">
-                Baixar Modelo
+              <button onClick={baixarPlanilhaModelo} className="btn-secondary" style={{ flexShrink: 0 }}>
+                Baixar Modelo Omie
               </button>
             </div>
 
-            <div className="input-wrapper">
+            <div className="input-wrapper" style={{ marginBottom: '24px' }}>
               <label className="input-label" style={{ marginBottom: '10px' }}>Passo 2: Anexe o Arquivo .XLSX</label>
               <div className="upload-area">
                 <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} className="upload-input" />
@@ -273,19 +348,21 @@ function App() {
             </div>
 
             {dadosPlanilha.length > 0 && (
-              <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary" style={{ marginTop: '20px' }}>
+              <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary">
                 {procMassa ? `A integrar ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length})`}
               </button>
             )}
 
             {logsMassa.length > 0 && (
               <div className="logs-container">
-                <label className="input-label">Status do Processamento</label>
-                <div style={{ maxHeight: '250px', overflowY: 'auto', marginTop: '16px' }}>
+                <label className="input-label" style={{ fontSize: '1rem', marginBottom: '16px' }}>Status do Processamento</label>
+                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
                   {logsMassa.map((log, i) => (
                     <div key={i} className={`log-item ${log.status.includes('Sucesso') ? 'log-success' : 'log-error'}`}>
-                      <span><strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}</span>
-                      {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>({log.msg})</span>}
+                      <span>
+                        <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}
+                      </span>
+                      {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>{log.msg}</span>}
                     </div>
                   ))}
                 </div>
