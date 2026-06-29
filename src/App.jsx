@@ -4,19 +4,17 @@ import * as XLSX from 'xlsx';
 function App() {
   const [modo, setModo] = useState('individual'); 
   
-  // ================= ESTADOS DO INDIVIDUAL =================
+  // ================= ESTADOS =================
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
   const [skuGerado, setSkuGerado] = useState(null);
   const [erroInd, setErroInd] = useState(null);
 
-  // ================= ESTADOS DO EM MASSA =================
   const [dadosPlanilha, setDadosPlanilha] = useState([]);
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
-  // ================= FUNÇÕES AUXILIARES OTIMIZADAS =================
-  
+  // ================= FUNÇÕES DE API E LÓGICA =================
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar com a API do Omie.');
@@ -38,32 +36,46 @@ function App() {
     return todosCodigos;
   };
 
-  const calcularProximoSku = (todosCodigos, prefixo) => {
+  // 🔥 NOVO MOTOR UNIFICADO: Anda em sequência e resolve se inclui ou se altera
+  const encontrarProximaVaga = (todosCodigos, prefixo) => {
     const prefixoStr = String(prefixo).trim(); 
-    const regex = new RegExp(`^${prefixoStr}\\d{4}$`);
-    
-    const sequenciasDaCategoria = todosCodigos
-      .filter(prod => {
-        const cod = typeof prod === 'string' ? prod : prod.codigo;
-        return cod && regex.test(String(cod).trim());
-      })
-      .map(prod => {
-        const cod = typeof prod === 'string' ? prod : prod.codigo;
-        return parseInt(String(cod).trim().slice(prefixoStr.length), 10);
-      });
+    const numDigitosSequencia = 7 - prefixoStr.length; // Garante sempre os 7 dígitos
+    const regex = new RegExp(`^${prefixoStr}\\d{${numDigitosSequencia}}$`);
+    const descricoesStandBy = ['PRODUTO INDEFINIDO', 'PRODUTO INDENIDO', 'CÓDIGO EM STAND-BY'];
 
-    sequenciasDaCategoria.sort((a, b) => a - b);
+    // Filtra só o que interessa daquela categoria e formato
+    const produtosDaCategoria = todosCodigos.filter(prod => {
+      const cod = typeof prod === 'string' ? prod : prod.codigo;
+      return cod && regex.test(String(cod).trim());
+    });
+
     let proximaSequencia = 1; 
 
-    for (let num of sequenciasDaCategoria) {
-      if (num === proximaSequencia) {
-        proximaSequencia++;
-      } else if (num > proximaSequencia) {
-        break;
-      }
-    }
+    while (true) {
+      // Monta o SKU teste (ex: 400 + 0010 = 4000010)
+      const codigoTestado = prefixoStr + proximaSequencia.toString().padStart(numDigitosSequencia, '0');
+      
+      // Procura se o código teste já existe no Omie
+      const produtoExistente = produtosDaCategoria.find(prod => {
+        const cod = typeof prod === 'string' ? prod : prod.codigo;
+        return String(cod).trim() === codigoTestado;
+      });
 
-    return prefixoStr + proximaSequencia.toString().padStart(4, '0');
+      if (!produtoExistente) {
+        // Cenário 1: O buraco tá completamente livre!
+        return { codigo: codigoTestado, acao: 'IncluirProduto' };
+      } else {
+        // Cenário 2: O código já existe. Vamos ver o nome dele.
+        const desc = (produtoExistente.descricao || '').toUpperCase().trim();
+        if (descricoesStandBy.includes(desc)) {
+          // É um "INDEFINIDO"! Vamos sobrescrever.
+          return { codigo: codigoTestado, acao: 'AlterarProduto' };
+        }
+      }
+
+      // Cenário 3: O código existe e é um produto real (ocupado). Pula para o próximo número.
+      proximaSequencia++;
+    }
   };
 
   const cadastrarNoOmie = async (codigo, descricao, ncm, acao) => {
@@ -78,7 +90,7 @@ function App() {
         unidade: "UN",
         preco: 0,
         ncm: ncmFormatado,
-        acao: acao // 'IncluirProduto' ou 'AlterarProduto'
+        acao: acao 
       })
     });
 
@@ -87,10 +99,7 @@ function App() {
     return data;
   };
 
-  // Nomes coringas que o sistema pode sobrescrever no Omie
-  const descricoesStandBy = ['PRODUTO INDEFINIDO', 'PRODUTO INDENIDO', 'CÓDIGO EM STAND-BY'];
-
-  // ================= LÓGICA DO MODO INDIVIDUAL =================
+  // ================= LÓGICA MODO INDIVIDUAL =================
   const handleChangeInd = (e) => setFormInd({ ...formInd, [e.target.name]: e.target.value });
 
   const gerarECadastrarIndividual = async (e) => {
@@ -108,30 +117,13 @@ function App() {
         return desc.toUpperCase().trim() === descFormatada;
       });
 
-      if (produtoExistente) {
-        throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
-      }
+      if (produtoExistente) throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
 
-      // Procura primeiro por um código "INDEFINIDO" ou "INDENIDO"
-      const produtoStandBy = todosCodigos.find(prod => {
-        const desc = (prod.descricao || '').toUpperCase().trim();
-        const cod = (prod.codigo || '').trim();
-        return cod.startsWith(formInd.categoria) && descricoesStandBy.includes(desc);
-      });
+      // Encontra a próxima vaga justa na fila (vazia ou indefinida)
+      const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
 
-      let novoSKU;
-      let acaoOmie;
-
-      if (produtoStandBy) {
-        novoSKU = produtoStandBy.codigo.trim();
-        acaoOmie = "AlterarProduto"; // Reaproveita o código
-      } else {
-        novoSKU = calcularProximoSku(todosCodigos, formInd.categoria);
-        acaoOmie = "IncluirProduto"; // Usa o próximo buraco disponível
-      }
-
-      await cadastrarNoOmie(novoSKU, descFormatada, formInd.ncm, acaoOmie);
-      setSkuGerado(novoSKU);
+      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
+      setSkuGerado(vaga.codigo);
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
       setErroInd(err.message);
@@ -140,14 +132,9 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DO MODO EM MASSA =================
+  // ================= LÓGICA MODO MASSA =================
   const baixarPlanilhaModelo = () => {
-    const dadosModelo = [{
-      CATEGORIA: "400",
-      DESCRICAO: "PRODUTO DE TESTE EM STAND-BY",
-      NCM: "1905.90.20"
-    }];
-    
+    const dadosModelo = [{ CATEGORIA: "400", DESCRICAO: "PRODUTO DE TESTE EM STAND-BY", NCM: "1905.90.20" }];
     const ws = XLSX.utils.json_to_sheet(dadosModelo);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Modelo SKU");
@@ -157,14 +144,12 @@ function App() {
   const lerArquivoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(worksheet);
-      setDadosPlanilha(json);
+      setDadosPlanilha(XLSX.utils.sheet_to_json(worksheet));
       setLogsMassa([]); 
     };
     reader.readAsArrayBuffer(file);
@@ -185,58 +170,45 @@ function App() {
         const ncmStr = linha.NCM ? String(linha.NCM).trim() : '';
 
         if (!catStr || !descStr) {
-          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Categoria e Descrição são obrigatórios.` }]);
+          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]);
           continue;
         }
 
-        const produtoExistente = todosCodigos.find(prod => {
-           const desc = prod.descricao || '';
-           return desc.toUpperCase().trim() === descStr;
-        });
-
+        const produtoExistente = todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr);
         if (produtoExistente) {
-          setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: `Bloqueado. Já existe no Omie.` }]);
+          setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Bloqueado. Já existe no Omie.' }]);
           continue;
         }
 
-        const produtoStandBy = todosCodigos.find(prod => {
-          const desc = (prod.descricao || '').toUpperCase().trim();
-          const cod = (prod.codigo || '').trim();
-          return cod.startsWith(catStr) && descricoesStandBy.includes(desc);
-        });
-
-        let novoSKU;
-        let acaoOmie;
-
-        if (produtoStandBy) {
-          novoSKU = produtoStandBy.codigo.trim();
-          acaoOmie = "AlterarProduto";
-          // Atualiza a memória para evitar que o próximo item da planilha pegue o mesmo stand-by
-          produtoStandBy.descricao = descStr; 
-        } else {
-          novoSKU = calcularProximoSku(todosCodigos, catStr);
-          acaoOmie = "IncluirProduto";
-          // Ocupa o buraco na memória
-          todosCodigos.push({ codigo: novoSKU, descricao: descStr }); 
-        }
+        // Descobre a vaga e a ação (Incluir/Alterar)
+        const vaga = encontrarProximaVaga(todosCodigos, catStr);
 
         try {
-          await cadastrarNoOmie(novoSKU, descStr, ncmStr, acaoOmie);
-          const statusTxt = acaoOmie === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso';
-          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: statusTxt }]);
+          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao);
+          
+          // Atualiza a lista na memória para a próxima linha da planilha não pegar a mesma vaga
+          if (vaga.acao === 'IncluirProduto') {
+            todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
+          } else {
+            const p = todosCodigos.find(x => x.codigo === vaga.codigo);
+            if (p) p.descricao = descStr;
+          }
+
+          const statusTxt = vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso';
+          setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: statusTxt }]);
         } catch (err) {
-          setLogsMassa(prev => [...prev, { sku: novoSKU, desc: descStr, status: 'Erro', msg: err.message }]);
+          setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]);
         }
       }
     } catch (err) {
-      alert("Erro crítico ao varrer o Omie: " + err.message);
+      alert("Erro crítico: " + err.message);
     } finally {
       setProcMassa(false);
       setDadosPlanilha([]); 
     }
   };
 
-  // ================= RENDERIZAÇÃO =================
+  // ================= UI / RENDER =================
   return (
     <div style={{ backgroundColor: '#F8F6F0', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' }}>
       <div style={{ maxWidth: '800px', margin: '0 auto', backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #E5E0D8' }}>
@@ -245,12 +217,8 @@ function App() {
           <h2 style={{ margin: 0, color: '#0F2041' }}>Gerador de SKU - TI</h2>
           
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setModo('individual')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'individual' ? '#0F2041' : '#E5E0D8', color: modo === 'individual' ? '#fff' : '#0F2041' }}>
-              Individual
-            </button>
-            <button onClick={() => setModo('massa')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'massa' ? '#0F2041' : '#E5E0D8', color: modo === 'massa' ? '#fff' : '#0F2041' }}>
-              Em Massa (Planilha)
-            </button>
+            <button onClick={() => setModo('individual')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'individual' ? '#0F2041' : '#E5E0D8', color: modo === 'individual' ? '#fff' : '#0F2041' }}>Individual</button>
+            <button onClick={() => setModo('massa')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'massa' ? '#0F2041' : '#E5E0D8', color: modo === 'massa' ? '#fff' : '#0F2041' }}>Em Massa (Planilha)</button>
           </div>
         </div>
 
@@ -263,9 +231,11 @@ function App() {
                 <label style={{ fontWeight: 'bold', color: '#333' }}>Prefixo (Categoria) *</label>
                 <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required style={{ width: '100%', padding: '12px', marginTop: '5px', borderRadius: '8px', border: '1px solid #ccc' }}>
                   <option value="">Selecione a raiz do código...</option>
+                  <option value="200">200 - EMBALAGEM</option>
                   <option value="300">300 - EXTERNO</option>
                   <option value="400">400 - INTERNO</option>
                   <option value="500">500 - CESTAS</option>
+                  <option value="1010">1010 - PRODUTO ENVASE</option>
                 </select>
               </div>
               
@@ -300,9 +270,7 @@ function App() {
                 <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#334155' }}>Passo 1: Baixe o modelo padrão</p>
                 <small style={{ color: '#64748b' }}>As colunas exatas são: CATEGORIA, DESCRICAO e NCM</small>
               </div>
-              <button onClick={baixarPlanilhaModelo} style={{ padding: '10px 15px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Baixar Planilha Modelo
-              </button>
+              <button onClick={baixarPlanilhaModelo} style={{ padding: '10px 15px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Baixar Planilha Modelo</button>
             </div>
 
             <div style={{ marginBottom: '20px' }}>
@@ -322,8 +290,7 @@ function App() {
                 <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {logsMassa.map((log, i) => (
                     <div key={i} style={{ padding: '10px', borderRadius: '6px', backgroundColor: log.status.includes('Sucesso') ? '#dcfce7' : '#fee2e2', border: `1px solid ${log.status.includes('Sucesso') ? '#bbf7d0' : '#fecaca'}`, fontSize: '14px' }}>
-                      <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku ? `SKU: ${log.sku}` : 'Erro'} </strong> 
-                      - {log.desc} {log.msg && `(Motivo: ${log.msg})`}
+                      <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku ? `SKU: ${log.sku}` : 'Erro'} </strong> - {log.desc} {log.msg && `(Motivo: ${log.msg})`}
                       <span style={{float: 'right', fontSize: '12px', color: '#64748b'}}>{log.status}</span>
                     </div>
                   ))}
@@ -332,7 +299,6 @@ function App() {
             )}
           </div>
         )}
-
       </div>
     </div>
   );
