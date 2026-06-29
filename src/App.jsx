@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
+import './App.css'; // O CSS da Biscoitê
 
 function App() {
   const [modo, setModo] = useState('individual'); 
@@ -14,7 +15,7 @@ function App() {
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
-  // ================= FUNÇÕES DE API E LÓGICA =================
+  // ================= LÓGICA CORE =================
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar com a API do Omie.');
@@ -36,14 +37,12 @@ function App() {
     return todosCodigos;
   };
 
-  // 🔥 NOVO MOTOR UNIFICADO: Anda em sequência e resolve se inclui ou se altera
   const encontrarProximaVaga = (todosCodigos, prefixo) => {
     const prefixoStr = String(prefixo).trim(); 
-    const numDigitosSequencia = 7 - prefixoStr.length; // Garante sempre os 7 dígitos
+    const numDigitosSequencia = 7 - prefixoStr.length; 
     const regex = new RegExp(`^${prefixoStr}\\d{${numDigitosSequencia}}$`);
     const descricoesStandBy = ['PRODUTO INDEFINIDO', 'PRODUTO INDENIDO', 'CÓDIGO EM STAND-BY'];
 
-    // Filtra só o que interessa daquela categoria e formato
     const produtosDaCategoria = todosCodigos.filter(prod => {
       const cod = typeof prod === 'string' ? prod : prod.codigo;
       return cod && regex.test(String(cod).trim());
@@ -52,35 +51,27 @@ function App() {
     let proximaSequencia = 1; 
 
     while (true) {
-      // Monta o SKU teste (ex: 400 + 0010 = 4000010)
       const codigoTestado = prefixoStr + proximaSequencia.toString().padStart(numDigitosSequencia, '0');
       
-      // Procura se o código teste já existe no Omie
       const produtoExistente = produtosDaCategoria.find(prod => {
         const cod = typeof prod === 'string' ? prod : prod.codigo;
         return String(cod).trim() === codigoTestado;
       });
 
       if (!produtoExistente) {
-        // Cenário 1: O buraco tá completamente livre!
         return { codigo: codigoTestado, acao: 'IncluirProduto' };
       } else {
-        // Cenário 2: O código já existe. Vamos ver o nome dele.
         const desc = (produtoExistente.descricao || '').toUpperCase().trim();
         if (descricoesStandBy.includes(desc)) {
-          // É um "INDEFINIDO"! Vamos sobrescrever.
           return { codigo: codigoTestado, acao: 'AlterarProduto' };
         }
       }
-
-      // Cenário 3: O código existe e é um produto real (ocupado). Pula para o próximo número.
       proximaSequencia++;
     }
   };
 
   const cadastrarNoOmie = async (codigo, descricao, ncm, acao) => {
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
-
     const res = await fetch('/api/cadastrar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -93,13 +84,12 @@ function App() {
         acao: acao 
       })
     });
-
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'O Omie recusou o cadastro.');
     return data;
   };
 
-  // ================= LÓGICA MODO INDIVIDUAL =================
+  // ================= HANDLERS =================
   const handleChangeInd = (e) => setFormInd({ ...formInd, [e.target.name]: e.target.value });
 
   const gerarECadastrarIndividual = async (e) => {
@@ -112,17 +102,12 @@ function App() {
       const descFormatada = formInd.descricao.toUpperCase().trim();
       const todosCodigos = await buscarTodosCodigosOmie();
       
-      const produtoExistente = todosCodigos.find(prod => {
-        const desc = prod.descricao || '';
-        return desc.toUpperCase().trim() === descFormatada;
-      });
-
+      const produtoExistente = todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada);
       if (produtoExistente) throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
 
-      // Encontra a próxima vaga justa na fila (vazia ou indefinida)
       const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
-
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
+      
       setSkuGerado(vaga.codigo);
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
@@ -132,7 +117,6 @@ function App() {
     }
   };
 
-  // ================= LÓGICA MODO MASSA =================
   const baixarPlanilhaModelo = () => {
     const dadosModelo = [{ CATEGORIA: "400", DESCRICAO: "PRODUTO DE TESTE EM STAND-BY", NCM: "1905.90.20" }];
     const ws = XLSX.utils.json_to_sheet(dadosModelo);
@@ -148,8 +132,7 @@ function App() {
     reader.onload = (evt) => {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      setDadosPlanilha(XLSX.utils.sheet_to_json(worksheet));
+      setDadosPlanilha(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]));
       setLogsMassa([]); 
     };
     reader.readAsArrayBuffer(file);
@@ -180,13 +163,11 @@ function App() {
           continue;
         }
 
-        // Descobre a vaga e a ação (Incluir/Alterar)
         const vaga = encontrarProximaVaga(todosCodigos, catStr);
 
         try {
           await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao);
           
-          // Atualiza a lista na memória para a próxima linha da planilha não pegar a mesma vaga
           if (vaga.acao === 'IncluirProduto') {
             todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
           } else {
@@ -208,28 +189,37 @@ function App() {
     }
   };
 
-  // ================= UI / RENDER =================
+  // ================= UI / RENDER (LIMPO) =================
   return (
-    <div style={{ backgroundColor: '#F8F6F0', minHeight: '100vh', padding: '40px 20px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto', backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #E5E0D8' }}>
+    <div className="app-container">
+      <div className="main-card">
         
-        <div style={{ marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, color: '#0F2041' }}>Gerador de SKU - TI</h2>
-          
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setModo('individual')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'individual' ? '#0F2041' : '#E5E0D8', color: modo === 'individual' ? '#fff' : '#0F2041' }}>Individual</button>
-            <button onClick={() => setModo('massa')} style={{ padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: modo === 'massa' ? '#0F2041' : '#E5E0D8', color: modo === 'massa' ? '#fff' : '#0F2041' }}>Em Massa (Planilha)</button>
+        <header className="header-section">
+          <h2 className="header-title">Gerador de SKU</h2>
+          <div className="segmented-control">
+            <button 
+              className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} 
+              onClick={() => setModo('individual')}
+            >
+              Individual
+            </button>
+            <button 
+              className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} 
+              onClick={() => setModo('massa')}
+            >
+              Em Massa (Planilha)
+            </button>
           </div>
-        </div>
+        </header>
 
         {modo === 'individual' && (
-          <div>
-            {erroInd && <div style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontWeight: 'bold' }}>Erro: {erroInd}</div>}
+          <div className="tab-content">
+            {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
 
-            <form onSubmit={gerarECadastrarIndividual} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div>
-                <label style={{ fontWeight: 'bold', color: '#333' }}>Prefixo (Categoria) *</label>
-                <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required style={{ width: '100%', padding: '12px', marginTop: '5px', borderRadius: '8px', border: '1px solid #ccc' }}>
+            <form onSubmit={gerarECadastrarIndividual} className="form-group">
+              <div className="input-wrapper">
+                <label className="input-label">Prefixo (Categoria) *</label>
+                <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required className="input-field">
                   <option value="">Selecione a raiz do código...</option>
                   <option value="200">200 - EMBALAGEM</option>
                   <option value="300">300 - EXTERNO</option>
@@ -239,59 +229,63 @@ function App() {
                 </select>
               </div>
               
-              <div>
-                <label style={{ fontWeight: 'bold', color: '#333' }}>Descrição Provisória / Final *</label>
-                <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="Será convertido para MAIÚSCULAS" style={{ width: '100%', padding: '12px', marginTop: '5px', borderRadius: '8px', border: '1px solid #ccc', textTransform: 'uppercase' }} />
+              <div className="input-wrapper">
+                <label className="input-label">Descrição Provisória / Final *</label>
+                <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="SERÁ CONVERTIDO PARA MAIÚSCULAS" className="input-field" style={{ textTransform: 'uppercase' }} />
               </div>
 
-              <div>
-                <label style={{ fontWeight: 'bold', color: '#333' }}>NCM</label>
-                <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="Deixe em branco para auto-preencher com 1905.90.20" style={{ width: '100%', padding: '12px', marginTop: '5px', borderRadius: '8px', border: '1px solid #ccc' }} />
+              <div className="input-wrapper">
+                <label className="input-label">NCM (Opcional)</label>
+                <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="Padrão automático: 1905.90.20" className="input-field" />
               </div>
               
-              <button type="submit" disabled={procInd} style={{ backgroundColor: '#F2A900', color: '#0F2041', padding: '16px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginTop: '10px' }}>
-                {procInd ? 'Calculando e Registrando...' : 'Descobrir Próximo SKU e Registar'}
+              <button type="submit" disabled={procInd} className="btn-primary">
+                {procInd ? 'A Processar Integração...' : 'Descobrir Próximo SKU e Registar'}
               </button>
             </form>
 
             {skuGerado && (
-              <div style={{ marginTop: '25px', padding: '20px', backgroundColor: '#0F2041', color: '#fff', borderRadius: '12px', textAlign: 'center' }}>
-                <p style={{ margin: '0 0 10px 0', color: '#F2A900' }}>Sucesso! Novo produto registado no Omie:</p>
-                <h1 style={{ margin: 0, fontSize: '32px' }}>{skuGerado}</h1>
+              <div className="success-card">
+                <p>Sucesso! Novo produto registado:</p>
+                <h1>{skuGerado}</h1>
               </div>
             )}
           </div>
         )}
 
         {modo === 'massa' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f1f5f9', padding: '15px', borderRadius: '8px', border: '1px dashed #cbd5e1', marginBottom: '20px' }}>
-              <div>
-                <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#334155' }}>Passo 1: Baixe o modelo padrão</p>
-                <small style={{ color: '#64748b' }}>As colunas exatas são: CATEGORIA, DESCRICAO e NCM</small>
+          <div className="tab-content">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+              <div className="input-wrapper">
+                <label className="input-label">Passo 1: Prepare a Planilha</label>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Colunas obrigatórias: CATEGORIA, DESCRICAO, NCM</span>
               </div>
-              <button onClick={baixarPlanilhaModelo} style={{ padding: '10px 15px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Baixar Planilha Modelo</button>
+              <button onClick={baixarPlanilhaModelo} className="btn-secondary">
+                Baixar Modelo
+              </button>
             </div>
 
-            <div style={{ marginBottom: '20px' }}>
-              <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', color: '#334155' }}>Passo 2: Envie a planilha preenchida</p>
-              <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }} />
+            <div className="input-wrapper">
+              <label className="input-label" style={{ marginBottom: '10px' }}>Passo 2: Anexe o Arquivo .XLSX</label>
+              <div className="upload-area">
+                <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} className="upload-input" />
+              </div>
             </div>
 
             {dadosPlanilha.length > 0 && (
-              <button onClick={processarEmMassa} disabled={procMassa} style={{ width: '100%', backgroundColor: '#F2A900', color: '#0F2041', padding: '16px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-                {procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length} linhas)`}
+              <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary" style={{ marginTop: '20px' }}>
+                {procMassa ? `A integrar ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length})`}
               </button>
             )}
 
             {logsMassa.length > 0 && (
-              <div style={{ marginTop: '30px' }}>
-                <h3 style={{ borderBottom: '2px solid #F0ECE4', paddingBottom: '10px', color: '#0F2041' }}>Resultados da Importação:</h3>
-                <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div className="logs-container">
+                <label className="input-label">Status do Processamento</label>
+                <div style={{ maxHeight: '250px', overflowY: 'auto', marginTop: '16px' }}>
                   {logsMassa.map((log, i) => (
-                    <div key={i} style={{ padding: '10px', borderRadius: '6px', backgroundColor: log.status.includes('Sucesso') ? '#dcfce7' : '#fee2e2', border: `1px solid ${log.status.includes('Sucesso') ? '#bbf7d0' : '#fecaca'}`, fontSize: '14px' }}>
-                      <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku ? `SKU: ${log.sku}` : 'Erro'} </strong> - {log.desc} {log.msg && `(Motivo: ${log.msg})`}
-                      <span style={{float: 'right', fontSize: '12px', color: '#64748b'}}>{log.status}</span>
+                    <div key={i} className={`log-item ${log.status.includes('Sucesso') ? 'log-success' : 'log-error'}`}>
+                      <span><strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}</span>
+                      {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>({log.msg})</span>}
                     </div>
                   ))}
                 </div>
@@ -299,6 +293,7 @@ function App() {
             )}
           </div>
         )}
+
       </div>
     </div>
   );
