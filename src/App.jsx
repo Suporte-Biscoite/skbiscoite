@@ -1,16 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import './App.css';
 
 function App() {
   // ================= ESTADOS DE LOGIN =================
-  const [autenticado, setAutenticado] = useState(false);
+  const [usuarioLogado, setUsuarioLogado] = useState(null);
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
   const [erroLogin, setErroLogin] = useState('');
 
   // ================= ESTADOS DO SISTEMA =================
-  const [modo, setModo] = useState('individual'); 
+  const [modo, setModo] = useState('individual'); // individual | massa | historico
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
   const [skuGerado, setSkuGerado] = useState(null);
@@ -20,6 +20,36 @@ function App() {
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
+  // ================= ESTADO DO HISTÓRICO =================
+  const [historico, setHistorico] = useState(() => {
+    const salvo = localStorage.getItem('historico_skus');
+    return salvo ? JSON.parse(salvo) : [];
+  });
+
+  const registrarHistorico = (sku, descricao) => {
+    const novoRegistro = {
+      id: Date.now() + Math.random(),
+      email: usuarioLogado,
+      sku: sku,
+      descricao: descricao,
+      data: new Date().toLocaleDateString('pt-BR'),
+      hora: new Date().toLocaleTimeString('pt-BR')
+    };
+    
+    setHistorico(prev => {
+      const atualizado = [novoRegistro, ...prev];
+      localStorage.setItem('historico_skus', JSON.stringify(atualizado));
+      return atualizado;
+    });
+  };
+
+  const limparHistorico = () => {
+    if (window.confirm('Tem a certeza que deseja limpar o histórico deste navegador?')) {
+      setHistorico([]);
+      localStorage.removeItem('historico_skus');
+    }
+  };
+
   // ================= LÓGICA DE LOGIN =================
   const handleChangeLogin = (e) => {
     setCredenciais({ ...credenciais, [e.target.name]: e.target.value });
@@ -27,16 +57,20 @@ function App() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    // Regra simples: E-mail da Biscoitê e senha "ti123"
     if (credenciais.email.endsWith('@biscoite.com.br') && credenciais.senha === 'ti123') {
-      setAutenticado(true);
+      setUsuarioLogado(credenciais.email);
       setErroLogin('');
     } else {
       setErroLogin('E-mail corporativo inválido ou senha incorreta.');
     }
   };
 
-  // ================= LÓGICA CORE =================
+  const handleLogout = () => {
+    setUsuarioLogado(null);
+    setCredenciais({ email: '', senha: '' });
+  };
+
+  // ================= LÓGICA CORE DO OMIE =================
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar com a API do Omie.');
@@ -130,6 +164,7 @@ function App() {
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
       
       setSkuGerado(vaga.codigo);
+      registrarHistorico(vaga.codigo, descFormatada); // Guarda no histórico!
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
       setErroInd(err.message);
@@ -251,6 +286,8 @@ function App() {
 
           const statusTxt = vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso';
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: statusTxt }]);
+          registrarHistorico(vaga.codigo, descStr); // Guarda no histórico em massa!
+
         } catch (err) {
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]);
         }
@@ -266,7 +303,7 @@ function App() {
   // ================= UI / RENDER =================
   
   // TELA DE LOGIN
-  if (!autenticado) {
+  if (!usuarioLogado) {
     return (
       <div className="app-container">
         <div className="main-card" style={{ maxWidth: '420px', margin: '0 auto', padding: '50px 40px' }}>
@@ -324,26 +361,26 @@ function App() {
         
         <header className="header-section">
           <h2 className="header-title">Gerador de SKU</h2>
-          <div className="segmented-control">
-            <button 
-              className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} 
-              onClick={() => setModo('individual')}
-            >
+          
+          {/* Adicionámos a terceira aba aqui */}
+          <div className="segmented-control" style={{ maxWidth: '600px' }}>
+            <button className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} onClick={() => setModo('individual')}>
               Individual
             </button>
-            <button 
-              className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} 
-              onClick={() => setModo('massa')}
-            >
+            <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>
               Em Massa (Planilha)
             </button>
+            <button className={`tab-btn ${modo === 'historico' ? 'active' : ''}`} onClick={() => setModo('historico')}>
+              Histórico
+            </button>
           </div>
-          <button 
-            onClick={() => setAutenticado(false)} 
-            style={{ marginTop: '15px', background: 'none', border: 'none', color: '#EF4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
-          >
-            Sair do Sistema
-          </button>
+
+          <div style={{ marginTop: '15px', display: 'flex', gap: '15px', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>👤 {usuarioLogado}</span>
+            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#EF4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}>
+              Sair
+            </button>
+          </div>
         </header>
 
         {modo === 'individual' && (
@@ -424,6 +461,46 @@ function App() {
                         <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}
                       </span>
                       {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>{log.msg}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NOVA ABA DE HISTÓRICO */}
+        {modo === 'historico' && (
+          <div className="tab-content">
+            <div className="step-container" style={{ marginBottom: '24px' }}>
+              <div className="step-text">
+                <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Histórico Local de Criação</p>
+                <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
+                  Registos salvos localmente neste navegador.
+                </small>
+              </div>
+              <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#EF4444' }}>
+                Limpar Histórico
+              </button>
+            </div>
+
+            {historico.length === 0 ? (
+              <div className="upload-area" style={{ cursor: 'default' }}>
+                <p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado neste navegador ainda.</p>
+              </div>
+            ) : (
+              <div className="logs-container" style={{ marginTop: '0' }}>
+                <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                  {historico.map((item) => (
+                    <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
+                        <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{item.data} às {item.hora}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
+                        <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
