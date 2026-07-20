@@ -39,6 +39,112 @@ body, html {
   animation: fadeIn 0.6s ease-out;
 }
 
+/* ================= MENU DO USUÁRIO ================= */
+.user-menu-fixed {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 999;
+}
+
+.avatar-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--navy-main);
+  border: 2px solid var(--gold-main);
+  color: var(--gold-main);
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 32, 65, 0.2);
+  transition: all 0.3s ease;
+}
+
+.avatar-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(242, 169, 0, 0.3);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  background-color: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(15, 32, 65, 0.15);
+  border: 1px solid var(--gray-border);
+  width: 240px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.dropdown-header {
+  padding: 16px;
+  background-color: var(--cream-bg);
+  border-bottom: 1px solid var(--gray-border);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--navy-main);
+  word-break: break-all;
+  text-align: left;
+}
+
+.dropdown-item {
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropdown-item:hover {
+  background-color: #F1F5F9;
+  color: var(--navy-main);
+}
+
+.dropdown-item.danger {
+  color: #EF4444;
+  border-top: 1px solid var(--gray-border);
+}
+
+.dropdown-item.danger:hover {
+  background-color: #FEF2F2;
+}
+
+.btn-back {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 0;
+  font-family: 'Montserrat', sans-serif;
+  transition: color 0.2s;
+}
+
+.btn-back:hover {
+  color: var(--navy-main);
+}
+
+/* ================= CARD PRINCIPAL E COMPONENTES ================= */
 .main-card {
   background-color: var(--white);
   padding: 48px 40px;
@@ -185,7 +291,6 @@ select.input-field {
   color: var(--gold-main);
 }
 
-/* Container do Passo 1 - Agora responsivo e com respiro */
 .step-container {
   display: flex;
   justify-content: space-between;
@@ -196,15 +301,11 @@ select.input-field {
   border: 1px solid var(--gray-border);
   margin-bottom: 24px;
   gap: 16px;
-  flex-wrap: wrap; /* Impede que o texto esmague o botão */
+  flex-wrap: wrap;
 }
 
-.step-text {
-  flex: 1;
-  min-width: 250px;
-}
+.step-text { flex: 1; min-width: 250px; }
 
-/* Área de Upload perfeitamente centralizada */
 .upload-area {
   border: 2px dashed var(--gold-main);
   border-radius: 12px;
@@ -226,7 +327,7 @@ select.input-field {
 
 .upload-input {
   width: 100%;
-  max-width: 300px; /* Evita que o campo ocupe todo o espaço e fique descompensado */
+  max-width: 300px;
   cursor: pointer;
   font-family: 'Montserrat', sans-serif;
   color: var(--navy-main);
