@@ -4,10 +4,11 @@ import ExcelJS from 'exceljs';
 import './App.css';
 
 function App() {
-  // ================= ESTADOS DE LOGIN =================
+  // ================= ESTADOS DE LOGIN E MENU =================
   const [usuarioLogado, setUsuarioLogado] = useState(null);
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
   const [erroLogin, setErroLogin] = useState('');
+  const [menuAberto, setMenuAberto] = useState(false);
 
   // ================= ESTADOS DO SISTEMA =================
   const [modo, setModo] = useState('individual'); // individual | massa | historico
@@ -68,6 +69,8 @@ function App() {
   const handleLogout = () => {
     setUsuarioLogado(null);
     setCredenciais({ email: '', senha: '' });
+    setMenuAberto(false);
+    setModo('individual');
   };
 
   // ================= LÓGICA CORE DO OMIE =================
@@ -164,7 +167,7 @@ function App() {
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
       
       setSkuGerado(vaga.codigo);
-      registrarHistorico(vaga.codigo, descFormatada); // Guarda no histórico!
+      registrarHistorico(vaga.codigo, descFormatada); 
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) {
       setErroInd(err.message);
@@ -286,7 +289,7 @@ function App() {
 
           const statusTxt = vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso';
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: statusTxt }]);
-          registrarHistorico(vaga.codigo, descStr); // Guarda no histórico em massa!
+          registrarHistorico(vaga.codigo, descStr); 
 
         } catch (err) {
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]);
@@ -302,7 +305,6 @@ function App() {
 
   // ================= UI / RENDER =================
   
-  // TELA DE LOGIN
   if (!usuarioLogado) {
     return (
       <div className="app-container">
@@ -354,163 +356,197 @@ function App() {
     );
   }
 
-  // TELA PRINCIPAL (APÓS LOGIN)
   return (
-    <div className="app-container">
-      <div className="main-card">
+    <>
+      {/* MENU DO USUÁRIO FIXO NO TOPO DIREITO */}
+      <div className="user-menu-fixed">
+        <button className="avatar-btn" onClick={() => setMenuAberto(!menuAberto)}>
+          👤
+        </button>
         
-        <header className="header-section">
-          <h2 className="header-title">Gerador de SKU</h2>
-          
-          {/* Adicionámos a terceira aba aqui */}
-          <div className="segmented-control" style={{ maxWidth: '600px' }}>
-            <button className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} onClick={() => setModo('individual')}>
-              Individual
-            </button>
-            <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>
-              Em Massa (Planilha)
-            </button>
-            <button className={`tab-btn ${modo === 'historico' ? 'active' : ''}`} onClick={() => setModo('historico')}>
-              Histórico
-            </button>
-          </div>
-
-          <div style={{ marginTop: '15px', display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>👤 {usuarioLogado}</span>
-            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#EF4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}>
-              Sair
-            </button>
-          </div>
-        </header>
-
-        {modo === 'individual' && (
-          <div className="tab-content">
-            {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
-
-            <form onSubmit={gerarECadastrarIndividual} className="form-group">
-              <div className="input-wrapper">
-                <label className="input-label">Prefixo (Categoria) *</label>
-                <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required className="input-field">
-                  <option value="">Selecione a raiz do código...</option>
-                  <option value="200">200 - EMBALAGEM</option>
-                  <option value="300">300 - EXTERNO</option>
-                  <option value="400">400 - INTERNO</option>
-                  <option value="500">500 - CESTAS</option>
-                  <option value="1010">1010 - PRODUTO ENVASE</option>
-                </select>
-              </div>
+        {menuAberto && (
+          <>
+            <div 
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} 
+              onClick={() => setMenuAberto(false)} 
+            />
+            <div className="dropdown-menu" style={{ zIndex: 999 }}>
+              <div className="dropdown-header">{usuarioLogado}</div>
               
-              <div className="input-wrapper">
-                <label className="input-label">Descrição Provisória / Final *</label>
-                <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="SERÁ CONVERTIDO PARA MAIÚSCULAS" className="input-field" style={{ textTransform: 'uppercase' }} />
-              </div>
-
-              <div className="input-wrapper">
-                <label className="input-label">NCM (Opcional)</label>
-                <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="Padrão automático: 1905.90.20" className="input-field" />
-              </div>
+              <button 
+                className="dropdown-item" 
+                onClick={() => { setModo('historico'); setMenuAberto(false); }}
+              >
+                📄 Ver Histórico
+              </button>
               
-              <button type="submit" disabled={procInd} className="btn-primary">
-                {procInd ? 'A Processar Integração...' : 'Descobrir Próximo SKU e Registar'}
-              </button>
-            </form>
-
-            {skuGerado && (
-              <div className="success-card">
-                <p>Sucesso! Novo produto registado:</p>
-                <h1>{skuGerado}</h1>
-              </div>
-            )}
-          </div>
-        )}
-
-        {modo === 'massa' && (
-          <div className="tab-content">
-            <div className="step-container">
-              <div className="step-text">
-                <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Passo 1: Baixe o modelo padrão</p>
-                <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
-                  A nossa planilha modelo agora é estruturada com cabeçalhos informativos idênticos ao padrão do ERP Omie.
-                </small>
-              </div>
-              <button onClick={baixarPlanilhaModelo} className="btn-secondary" style={{ flexShrink: 0 }}>
-                Baixar Modelo Omie
+              <button 
+                className="dropdown-item danger" 
+                onClick={handleLogout}
+              >
+                🚪 Sair do Sistema
               </button>
             </div>
-
-            <div className="input-wrapper" style={{ marginBottom: '24px' }}>
-              <label className="input-label" style={{ marginBottom: '10px' }}>Passo 2: Anexe o Arquivo .XLSX</label>
-              <div className="upload-area">
-                <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} className="upload-input" />
-              </div>
-            </div>
-
-            {dadosPlanilha.length > 0 && (
-              <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary">
-                {procMassa ? `A integrar ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length})`}
-              </button>
-            )}
-
-            {logsMassa.length > 0 && (
-              <div className="logs-container">
-                <label className="input-label" style={{ fontSize: '1rem', marginBottom: '16px' }}>Status do Processamento</label>
-                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  {logsMassa.map((log, i) => (
-                    <div key={i} className={`log-item ${log.status.includes('Sucesso') ? 'log-success' : 'log-error'}`}>
-                      <span>
-                        <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}
-                      </span>
-                      {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>{log.msg}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          </>
         )}
-
-        {/* NOVA ABA DE HISTÓRICO */}
-        {modo === 'historico' && (
-          <div className="tab-content">
-            <div className="step-container" style={{ marginBottom: '24px' }}>
-              <div className="step-text">
-                <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Histórico Local de Criação</p>
-                <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
-                  Registos salvos localmente neste navegador.
-                </small>
-              </div>
-              <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#EF4444' }}>
-                Limpar Histórico
-              </button>
-            </div>
-
-            {historico.length === 0 ? (
-              <div className="upload-area" style={{ cursor: 'default' }}>
-                <p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado neste navegador ainda.</p>
-              </div>
-            ) : (
-              <div className="logs-container" style={{ marginTop: '0' }}>
-                <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
-                  {historico.map((item) => (
-                    <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{item.data} às {item.hora}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
-                        <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
-                        <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
       </div>
-    </div>
+
+      <div className="app-container">
+        <div className="main-card">
+          
+          {/* CABEÇALHO DINÂMICO CONSOANTE O MODO */}
+          {modo !== 'historico' ? (
+            <header className="header-section">
+              <h2 className="header-title">Gerador de SKU</h2>
+              <div className="segmented-control">
+                <button className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} onClick={() => setModo('individual')}>
+                  Individual
+                </button>
+                <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>
+                  Em Massa (Planilha)
+                </button>
+              </div>
+            </header>
+          ) : (
+            <header style={{ marginBottom: '40px' }}>
+              <button className="btn-back" onClick={() => setModo('individual')}>
+                ⬅ Voltar para o Gerador
+              </button>
+              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico de Criação</h2>
+            </header>
+          )}
+
+          {/* CONTEÚDO INDIVIDUAL */}
+          {modo === 'individual' && (
+            <div className="tab-content">
+              {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
+
+              <form onSubmit={gerarECadastrarIndividual} className="form-group">
+                <div className="input-wrapper">
+                  <label className="input-label">Prefixo (Categoria) *</label>
+                  <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required className="input-field">
+                    <option value="">Selecione a raiz do código...</option>
+                    <option value="200">200 - EMBALAGEM</option>
+                    <option value="300">300 - EXTERNO</option>
+                    <option value="400">400 - INTERNO</option>
+                    <option value="500">500 - CESTAS</option>
+                    <option value="1010">1010 - PRODUTO ENVASE</option>
+                  </select>
+                </div>
+                
+                <div className="input-wrapper">
+                  <label className="input-label">Descrição Provisória / Final *</label>
+                  <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="SERÁ CONVERTIDO PARA MAIÚSCULAS" className="input-field" style={{ textTransform: 'uppercase' }} />
+                </div>
+
+                <div className="input-wrapper">
+                  <label className="input-label">NCM (Opcional)</label>
+                  <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="Padrão automático: 1905.90.20" className="input-field" />
+                </div>
+                
+                <button type="submit" disabled={procInd} className="btn-primary">
+                  {procInd ? 'A Processar Integração...' : 'Descobrir Próximo SKU e Registar'}
+                </button>
+              </form>
+
+              {skuGerado && (
+                <div className="success-card">
+                  <p>Sucesso! Novo produto registado:</p>
+                  <h1>{skuGerado}</h1>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CONTEÚDO EM MASSA */}
+          {modo === 'massa' && (
+            <div className="tab-content">
+              <div className="step-container">
+                <div className="step-text">
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Passo 1: Baixe o modelo padrão</p>
+                  <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
+                    A nossa planilha modelo agora é estruturada com cabeçalhos informativos idênticos ao padrão do ERP Omie.
+                  </small>
+                </div>
+                <button onClick={baixarPlanilhaModelo} className="btn-secondary" style={{ flexShrink: 0 }}>
+                  Baixar Modelo Omie
+                </button>
+              </div>
+
+              <div className="input-wrapper" style={{ marginBottom: '24px' }}>
+                <label className="input-label" style={{ marginBottom: '10px' }}>Passo 2: Anexe o Arquivo .XLSX</label>
+                <div className="upload-area">
+                  <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} className="upload-input" />
+                </div>
+              </div>
+
+              {dadosPlanilha.length > 0 && (
+                <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary">
+                  {procMassa ? `A integrar ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length})`}
+                </button>
+              )}
+
+              {logsMassa.length > 0 && (
+                <div className="logs-container">
+                  <label className="input-label" style={{ fontSize: '1rem', marginBottom: '16px' }}>Status do Processamento</label>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    {logsMassa.map((log, i) => (
+                      <div key={i} className={`log-item ${log.status.includes('Sucesso') ? 'log-success' : 'log-error'}`}>
+                        <span>
+                          <strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}
+                        </span>
+                        {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>{log.msg}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TELA DE HISTÓRICO ISOLADA */}
+          {modo === 'historico' && (
+            <div className="tab-content">
+              <div className="step-container" style={{ marginBottom: '24px' }}>
+                <div className="step-text">
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Registos Locais</p>
+                  <small style={{ color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
+                    Exibindo os SKUs gerados recentemente a partir deste navegador.
+                  </small>
+                </div>
+                <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>
+                  Limpar Registo
+                </button>
+              </div>
+
+              {historico.length === 0 ? (
+                <div className="upload-area" style={{ cursor: 'default' }}>
+                  <p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado neste navegador ainda.</p>
+                </div>
+              ) : (
+                <div className="logs-container" style={{ marginTop: '0' }}>
+                  <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                    {historico.map((item) => (
+                      <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
+                          <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{item.data} às {item.hora}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
+                          <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
+                          <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </div>
+    </>
   );
 }
 
