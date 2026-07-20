@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import * as XLSX from 'xlsx'; // Usado para LER a planilha do utilizador
-import ExcelJS from 'exceljs'; // Usado para CRIAR a planilha modelo bonita
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import './App.css';
 
 function App() {
+  // ================= ESTADOS DE LOGIN =================
+  const [autenticado, setAutenticado] = useState(false);
+  const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
+  const [erroLogin, setErroLogin] = useState('');
+
+  // ================= ESTADOS DO SISTEMA =================
   const [modo, setModo] = useState('individual'); 
-  
-  // ================= ESTADOS =================
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
   const [skuGerado, setSkuGerado] = useState(null);
@@ -15,6 +19,22 @@ function App() {
   const [dadosPlanilha, setDadosPlanilha] = useState([]);
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
+
+  // ================= LÓGICA DE LOGIN =================
+  const handleChangeLogin = (e) => {
+    setCredenciais({ ...credenciais, [e.target.name]: e.target.value });
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    // Regra simples: E-mail da Biscoitê e senha "ti123"
+    if (credenciais.email.endsWith('@biscoite.com.br') && credenciais.senha === 'ti123') {
+      setAutenticado(true);
+      setErroLogin('');
+    } else {
+      setErroLogin('E-mail corporativo inválido ou senha incorreta.');
+    }
+  };
 
   // ================= LÓGICA CORE =================
   const buscarTodosCodigosOmie = async () => {
@@ -119,13 +139,10 @@ function App() {
   };
 
   // ================= HANDLERS MASSA =================
-  
-  // Nova função para gerar a planilha com design fiel ao Omie
   const baixarPlanilhaModelo = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Modelo SKU Biscoitê');
 
-    // Cabeçalho Principal (Vermelho Omie)
     worksheet.mergeCells('A1:C1');
     const titleRow = worksheet.getCell('A1');
     titleRow.value = 'Planilha de Importação de SKUs';
@@ -134,7 +151,6 @@ function App() {
     titleRow.alignment = { vertical: 'middle', horizontal: 'left' };
     worksheet.getRow(1).height = 30;
 
-    // Subtítulo
     worksheet.mergeCells('A2:C2');
     const subTitleRow = worksheet.getCell('A2');
     subTitleRow.value = 'Módulo: Gestão de Produtos Biscoitê';
@@ -143,7 +159,6 @@ function App() {
     subTitleRow.alignment = { vertical: 'middle', horizontal: 'left' };
     worksheet.getRow(2).height = 20;
 
-    // Linha de Instruções (Fundo rosado/claro)
     const instructions = [
       '(obrigatório)\nPrefixo numérico da categoria\n(ex: 400)',
       '(obrigatório)\nNome final do produto em letras maiúsculas',
@@ -155,36 +170,24 @@ function App() {
       cell.font = { name: 'Arial', size: 9, color: { argb: 'FF555555' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE5E5' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      cell.border = {
-        top: { style:'thin', color: { argb:'FFCCCCCC' } },
-        left: { style:'thin', color: { argb:'FFCCCCCC' } },
-        bottom: { style:'thin', color: { argb:'FFCCCCCC' } },
-        right: { style:'thin', color: { argb:'FFCCCCCC' } }
-      };
+      cell.border = { top: { style:'thin', color: { argb:'FFCCCCCC' } }, left: { style:'thin', color: { argb:'FFCCCCCC' } }, bottom: { style:'thin', color: { argb:'FFCCCCCC' } }, right: { style:'thin', color: { argb:'FFCCCCCC' } } };
     });
 
-    // Linha de Cabeçalhos Técnicos (Negrito)
     const headers = ['CATEGORIA', 'DESCRICAO', 'NCM'];
     const row4 = worksheet.addRow(headers);
     row4.height = 25;
     row4.eachCell((cell) => {
       cell.font = { name: 'Arial', size: 10, bold: true };
       cell.alignment = { vertical: 'middle', horizontal: 'left' };
-      cell.border = {
-        top: { style:'thick', color: { argb:'FF000000' } },
-        bottom: { style:'thick', color: { argb:'FF000000' } }
-      };
+      cell.border = { top: { style:'thick', color: { argb:'FF000000' } }, bottom: { style:'thick', color: { argb:'FF000000' } } };
     });
 
-    // Exemplo de preenchimento
     worksheet.addRow(['400', 'PRODUTO DE TESTE EM STAND-BY', '1905.90.20']);
 
-    // Largura das Colunas
     worksheet.getColumn(1).width = 25;
     worksheet.getColumn(2).width = 50;
     worksheet.getColumn(3).width = 25;
 
-    // Dispara o Download
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
@@ -202,7 +205,6 @@ function App() {
     reader.onload = (evt) => {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      // A leitura pula as linhas de cabeçalho cosmético para pegar os dados na linha 4 em diante
       const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { range: 3 });
       setDadosPlanilha(json);
       setLogsMassa([]); 
@@ -261,7 +263,61 @@ function App() {
     }
   };
 
-  // ================= UI RENDER =================
+  // ================= UI / RENDER =================
+  
+  // TELA DE LOGIN
+  if (!autenticado) {
+    return (
+      <div className="app-container">
+        <div className="main-card" style={{ maxWidth: '420px', margin: '0 auto', padding: '50px 40px' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '35px' }}>
+            <h2 className="header-title" style={{ marginBottom: '8px' }}>Acesso Restrito</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', margin: 0, fontWeight: '500' }}>
+              Gerador de SKUs - TI
+            </p>
+          </div>
+
+          {erroLogin && <div className="alert-error" style={{ marginBottom: '20px' }}>⚠️ {erroLogin}</div>}
+
+          <form className="form-group" onSubmit={handleLogin}>
+            <div className="input-wrapper">
+              <label className="input-label">E-mail Corporativo</label>
+              <input 
+                type="email" 
+                name="email"
+                value={credenciais.email}
+                onChange={handleChangeLogin}
+                placeholder="nome@biscoite.com.br" 
+                className="input-field" 
+                required 
+              />
+            </div>
+
+            <div className="input-wrapper">
+              <label className="input-label">Senha de Acesso</label>
+              <input 
+                type="password" 
+                name="senha"
+                value={credenciais.senha}
+                onChange={handleChangeLogin}
+                placeholder="••••••••" 
+                className="input-field" 
+                required 
+              />
+            </div>
+
+            <button type="submit" className="btn-primary" style={{ marginTop: '16px' }}>
+              Entrar no Sistema
+            </button>
+          </form>
+
+        </div>
+      </div>
+    );
+  }
+
+  // TELA PRINCIPAL (APÓS LOGIN)
   return (
     <div className="app-container">
       <div className="main-card">
@@ -282,6 +338,12 @@ function App() {
               Em Massa (Planilha)
             </button>
           </div>
+          <button 
+            onClick={() => setAutenticado(false)} 
+            style={{ marginTop: '15px', background: 'none', border: 'none', color: '#EF4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+          >
+            Sair do Sistema
+          </button>
         </header>
 
         {modo === 'individual' && (
@@ -327,7 +389,6 @@ function App() {
 
         {modo === 'massa' && (
           <div className="tab-content">
-            {/* O Passo 1 agora tem uma caixa que respira e não esmaga o botão */}
             <div className="step-container">
               <div className="step-text">
                 <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Passo 1: Baixe o modelo padrão</p>
