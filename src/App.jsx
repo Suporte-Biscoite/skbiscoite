@@ -11,19 +11,25 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
   // ================= ESTADOS DE USUÁRIOS E LOGIN =================
-  const [usuarioLogado, setUsuarioLogado] = useState(null); // Agora guarda o objeto do usuário {nome, email, setor}
+  const [usuarioLogado, setUsuarioLogado] = useState(null); 
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
   const [erroLogin, setErroLogin] = useState('');
+  const [sucessoLogin, setSucessoLogin] = useState(''); // Usado para mensagens de sucesso na tela de login
   const [carregandoLogin, setCarregandoLogin] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
 
+  // Estados para o fluxo "Esqueceu a Senha"
+  const [telaLogin, setTelaLogin] = useState('login'); // 'login' | 'recuperar'
+  const [emailRecuperacao, setEmailRecuperacao] = useState('');
+
+  // Estados do formulário de criação
   const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
   const [erroFormUser, setErroFormUser] = useState('');
   const [sucessoFormUser, setSucessoFormUser] = useState('');
   const [carregandoRegistro, setCarregandoRegistro] = useState(false);
 
   // ================= ESTADOS CORE =================
-  const [modo, setModo] = useState('individual'); // individual | massa | historico | usuarios
+  const [modo, setModo] = useState('individual'); 
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
   const [skuGerado, setSkuGerado] = useState(null);
@@ -33,18 +39,68 @@ function App() {
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
-  // ================= ESTADOS DO HISTÓRICO =================
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-  // ================= LÓGICA DE LOGIN (SUPABASE) =================
+  // ================= LÓGICA DE RECUPERAÇÃO DE SENHA =================
+  const gerarSenhaAleatoria = () => {
+    // Gera uma senha no padrão Biscoite + 4 números aleatórios (Ex: Biscoite4829)
+    const numeroAleatorio = Math.floor(1000 + Math.random() * 9000);
+    return `Biscoite${numeroAleatorio}`;
+  };
+
+  const handleRecuperarSenha = async (e) => {
+    e.preventDefault();
+    setCarregandoLogin(true);
+    setErroLogin('');
+    setSucessoLogin('');
+
+    try {
+      // 1. Verifica se o e-mail existe no banco
+      const { data: usuario, error: erroBusca } = await supabase
+        .from('usuarios')
+        .select('id, nome, email')
+        .eq('email', emailRecuperacao)
+        .single();
+
+      if (!usuario) {
+        setErroLogin('Este e-mail não foi encontrado no sistema.');
+        setCarregandoLogin(false);
+        return;
+      }
+
+      // 2. Gera a nova senha e atualiza no Supabase
+      const novaSenha = gerarSenhaAleatoria();
+      const { error: erroUpdate } = await supabase
+        .from('usuarios')
+        .update({ senha: novaSenha })
+        .eq('email', emailRecuperacao);
+
+      if (erroUpdate) throw erroUpdate;
+
+      // 3. Simulação do envio de E-mail (Para você não ficar trancado agora)
+      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\n\nSua senha foi redefinida com sucesso.\nSua nova senha de acesso é: ${novaSenha}\n\n(No futuro, isto chegará na caixa de entrada real)`);
+
+      // 4. Volta para a tela de login com sucesso
+      setTelaLogin('login');
+      setSucessoLogin('Sua nova senha foi gerada. Verifique seu e-mail (ou o alerta na tela).');
+      setEmailRecuperacao('');
+      
+    } catch (err) {
+      setErroLogin('Erro ao processar a recuperação de senha.');
+    } finally {
+      setCarregandoLogin(false);
+    }
+  };
+
+  // ================= LÓGICA DE LOGIN =================
   const handleLogin = async (e) => {
     e.preventDefault();
     setCarregandoLogin(true);
     setErroLogin('');
+    setSucessoLogin('');
 
     try {
-      // Busca no banco se existe o login/email com a senha informada
       const { data, error } = await supabase
         .from('usuarios')
         .select('*')
@@ -59,7 +115,7 @@ function App() {
         setErroLogin('Login, E-mail ou Senha incorretos.');
       }
     } catch (err) {
-      setErroLogin('Erro de comunicação com o servidor.');
+      setErroLogin('Erro de comunicação com o servidor. Verifique se as tabelas foram criadas.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -69,6 +125,7 @@ function App() {
     setUsuarioLogado(null);
     setMenuAberto(false);
     setModo('individual');
+    setTelaLogin('login');
   };
 
   const handleChangeUsuario = (e) => setFormUsuario({ ...formUsuario, [e.target.name]: e.target.value });
@@ -83,7 +140,6 @@ function App() {
     }
 
     try {
-      // Verifica duplicidade no banco
       const { data: existente } = await supabase
         .from('usuarios')
         .select('id')
@@ -94,7 +150,6 @@ function App() {
         return setErroFormUser('Este e-mail ou login já está cadastrado.');
       }
 
-      // Insere na nuvem
       const { error } = await supabase.from('usuarios').insert([{
         nome: formUsuario.nome,
         login: formUsuario.login,
@@ -114,7 +169,7 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE HISTÓRICO (SUPABASE) =================
+  // ================= LÓGICA DE HISTÓRICO =================
   const registrarHistorico = async (sku, descricao) => {
     if (!usuarioLogado) return;
     await supabase.from('historico_skus').insert([{
@@ -130,17 +185,14 @@ function App() {
       .from('historico_skus')
       .select('*')
       .order('criado_em', { ascending: false })
-      .limit(100); // Puxa os últimos 100 para não pesar a tela
+      .limit(100); 
     
     if (data) setHistorico(data);
     setCarregandoHistorico(false);
   };
 
-  // Toda vez que a aba histórico abrir, ele puxa os dados fresquinhos da nuvem
   useEffect(() => {
-    if (modo === 'historico') {
-      carregarHistorico();
-    }
+    if (modo === 'historico') carregarHistorico();
   }, [modo]);
 
   const limparHistorico = async () => {
@@ -186,7 +238,6 @@ function App() {
       if (!produtoExistente) return { codigo: codigoTestado, acao: 'IncluirProduto' };
       const desc = (produtoExistente.descricao || '').toUpperCase().trim();
       if (descricoesStandBy.includes(desc)) return { codigo: codigoTestado, acao: 'AlterarProduto' };
-      
       proximaSequencia++;
     }
   };
@@ -217,7 +268,7 @@ function App() {
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
       
       setSkuGerado(vaga.codigo);
-      await registrarHistorico(vaga.codigo, descFormatada); // Envia para a nuvem
+      await registrarHistorico(vaga.codigo, descFormatada); 
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) { setErroInd(err.message); } finally { setProcInd(false); }
   };
@@ -282,41 +333,71 @@ function App() {
           else { const p = todosCodigos.find(x => x.codigo === vaga.codigo); if (p) p.descricao = descStr; }
           
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso' }]);
-          await registrarHistorico(vaga.codigo, descStr); // Envia para a nuvem
+          await registrarHistorico(vaga.codigo, descStr); 
         } catch (err) { setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]); }
       }
     } catch (err) { alert("Erro crítico: " + err.message); } finally { setProcMassa(false); setDadosPlanilha([]); }
   };
 
-  // ================= TELA DE LOGIN =================
+  // ================= TELA DE LOGIN / RECUPERAÇÃO =================
   if (!usuarioLogado) {
     return (
       <div className="app-container">
         <div className="main-card" style={{ maxWidth: '420px', margin: '0 auto', padding: '50px 40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '35px' }}>
-            <h2 className="header-title" style={{ marginBottom: '8px' }}>Acesso Restrito</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', margin: 0, fontWeight: '500' }}>Gerador de SKUs - Biscoitê</p>
+            <h2 className="header-title" style={{ marginBottom: '8px' }}>
+              {telaLogin === 'login' ? 'Acesso Restrito' : 'Recuperar Senha'}
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', margin: 0, fontWeight: '500' }}>
+              Gerador de SKUs - Biscoitê
+            </p>
           </div>
+          
           {erroLogin && <div className="alert-error" style={{ marginBottom: '20px' }}>⚠️ {erroLogin}</div>}
-          <form className="form-group" onSubmit={handleLogin}>
-            <div className="input-wrapper">
-              <label className="input-label">E-mail ou Login</label>
-              <input type="text" name="email" value={credenciais.email} onChange={(e) => setCredenciais({...credenciais, email: e.target.value})} placeholder="nome@biscoite.com.br" className="input-field" required />
-            </div>
-            <div className="input-wrapper">
-              <label className="input-label">Senha de Acesso</label>
-              <input type="password" name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
-            </div>
-            <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
-              {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
-            </button>
-          </form>
+          {sucessoLogin && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoLogin}</div>}
+
+          {telaLogin === 'login' ? (
+            <form className="form-group" onSubmit={handleLogin}>
+              <div className="input-wrapper">
+                <label className="input-label">E-mail ou Login</label>
+                <input type="text" name="email" value={credenciais.email} onChange={(e) => setCredenciais({...credenciais, email: e.target.value})} placeholder="nome@biscoite.com.br" className="input-field" required />
+              </div>
+              <div className="input-wrapper">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="input-label">Senha de Acesso</label>
+                  <button type="button" onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--gold-main)', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', padding: 0 }}>
+                    Esqueceu a senha?
+                  </button>
+                </div>
+                <input type="password" name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
+              </div>
+              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
+                {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
+              </button>
+            </form>
+          ) : (
+            <form className="form-group" onSubmit={handleRecuperarSenha}>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: '10px', textAlign: 'center' }}>
+                Digite seu e-mail cadastrado. Enviaremos uma nova senha de acesso para você.
+              </p>
+              <div className="input-wrapper">
+                <label className="input-label">E-mail Corporativo</label>
+                <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="input-field" required />
+              </div>
+              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
+                {carregandoLogin ? 'A processar...' : 'Gerar Nova Senha'}
+              </button>
+              <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', marginTop: '15px', width: '100%' }}>
+                Voltar para o Login
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
   }
 
-  // ================= TELA PRINCIPAL =================
+  // ================= TELA PRINCIPAL (APÓS LOGIN) =================
   return (
     <>
       <div className="user-menu-fixed">
@@ -327,6 +408,7 @@ function App() {
             <div className="dropdown-menu" style={{ zIndex: 999 }}>
               <div className="dropdown-header">{usuarioLogado.nome}</div>
               
+              {/* Opcional: Só liberar a tela de criar usuário se for do TI, mas deixei liberado para todos por enquanto */}
               <button className="dropdown-item" onClick={() => { setModo('usuarios'); setMenuAberto(false); }}>
                 👥 Criar Novo Usuário
               </button>
@@ -352,15 +434,12 @@ function App() {
                 <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>Em Massa (Planilha)</button>
               </div>
             </header>
-          ) : modo === 'historico' ? (
-            <header style={{ marginBottom: '40px' }}>
-              <button className="btn-back" onClick={() => setModo('individual')}>⬅ Voltar para o Gerador</button>
-              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico da Nuvem</h2>
-            </header>
           ) : (
             <header style={{ marginBottom: '40px' }}>
               <button className="btn-back" onClick={() => setModo('individual')}>⬅ Voltar para o Gerador</button>
-              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Gestão de Usuários</h2>
+              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>
+                {modo === 'historico' ? 'Histórico da Nuvem' : 'Gestão de Usuários'}
+              </h2>
             </header>
           )}
 
@@ -515,14 +594,12 @@ function App() {
                     </select>
                   </div>
                 </div>
-                
                 <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '20px' }}>
                   {carregandoRegistro ? 'A Registar...' : 'Registrar Usuário'}
                 </button>
               </form>
             </div>
           )}
-
         </div>
       </div>
     </>
