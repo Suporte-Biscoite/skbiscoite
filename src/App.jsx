@@ -1,26 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import { createClient } from '@supabase/supabase-js';
 import './App.css';
 
-function App() {
-  // ================= ESTADOS DO SISTEMA DE USUÁRIOS =================
-  const [listaUsuarios, setListaUsuarios] = useState(() => {
-    const salvos = localStorage.getItem('usuarios_biscoite');
-    return salvos ? JSON.parse(salvos) : [];
-  });
+// ================= CONEXÃO SUPABASE =================
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const [usuarioLogado, setUsuarioLogado] = useState(null);
+function App() {
+  // ================= ESTADOS DE USUÁRIOS E LOGIN =================
+  const [usuarioLogado, setUsuarioLogado] = useState(null); // Agora guarda o objeto do usuário {nome, email, setor}
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
   const [erroLogin, setErroLogin] = useState('');
+  const [carregandoLogin, setCarregandoLogin] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
 
-  // Estados do formulário de criação de usuário
-  const [formUsuario, setFormUsuario] = useState({
-    nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: ''
-  });
+  const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
   const [erroFormUser, setErroFormUser] = useState('');
   const [sucessoFormUser, setSucessoFormUser] = useState('');
+  const [carregandoRegistro, setCarregandoRegistro] = useState(false);
 
   // ================= ESTADOS CORE =================
   const [modo, setModo] = useState('individual'); // individual | massa | historico | usuarios
@@ -33,96 +33,124 @@ function App() {
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
 
-  const [historico, setHistorico] = useState(() => {
-    const salvo = localStorage.getItem('historico_skus');
-    return salvo ? JSON.parse(salvo) : [];
-  });
+  // ================= ESTADOS DO HISTÓRICO =================
+  const [historico, setHistorico] = useState([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-  // ================= LÓGICA DE USUÁRIOS & LOGIN =================
-  const handleLogin = (e) => {
+  // ================= LÓGICA DE LOGIN (SUPABASE) =================
+  const handleLogin = async (e) => {
     e.preventDefault();
-    
-    // Acesso Mestre (Hardcoded para você nunca ficar trancado de fora)
-    if (credenciais.email === 'ti' && credenciais.senha === 'ti123') {
-      setUsuarioLogado('Acesso Mestre TI');
-      setErroLogin('');
-      return;
-    }
+    setCarregandoLogin(true);
+    setErroLogin('');
 
-    // Verifica no banco de dados local (localStorage)
-    const usuarioEncontrado = listaUsuarios.find(u => 
-      (u.email === credenciais.email || u.login === credenciais.email) && u.senha === credenciais.senha
-    );
+    try {
+      // Busca no banco se existe o login/email com a senha informada
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`)
+        .eq('senha', credenciais.senha)
+        .single();
 
-    if (usuarioEncontrado) {
-      setUsuarioLogado(usuarioEncontrado.nome);
-      setErroLogin('');
-    } else {
-      setErroLogin('Login, E-mail ou Senha incorretos.');
+      if (data) {
+        setUsuarioLogado(data);
+        setCredenciais({ email: '', senha: '' });
+      } else {
+        setErroLogin('Login, E-mail ou Senha incorretos.');
+      }
+    } catch (err) {
+      setErroLogin('Erro de comunicação com o servidor.');
+    } finally {
+      setCarregandoLogin(false);
     }
   };
 
   const handleLogout = () => {
     setUsuarioLogado(null);
-    setCredenciais({ email: '', senha: '' });
     setMenuAberto(false);
     setModo('individual');
   };
 
   const handleChangeUsuario = (e) => setFormUsuario({ ...formUsuario, [e.target.name]: e.target.value });
 
-  const registrarNovoUsuario = (e) => {
+  const registrarNovoUsuario = async (e) => {
     e.preventDefault();
-    setErroFormUser('');
-    setSucessoFormUser('');
+    setErroFormUser(''); setSucessoFormUser(''); setCarregandoRegistro(true);
 
     if (formUsuario.senha !== formUsuario.confirmaSenha) {
-      setErroFormUser('As senhas não coincidem!');
-      return;
+      setCarregandoRegistro(false);
+      return setErroFormUser('As senhas não coincidem!');
     }
 
-    // Verifica se login ou e-mail já existem
-    const jaExiste = listaUsuarios.some(u => u.email === formUsuario.email || u.login === formUsuario.login);
-    if (jaExiste) {
-      setErroFormUser('Este e-mail ou login já está cadastrado.');
-      return;
-    }
+    try {
+      // Verifica duplicidade no banco
+      const { data: existente } = await supabase
+        .from('usuarios')
+        .select('id')
+        .or(`email.eq.${formUsuario.email},login.eq.${formUsuario.login}`);
 
-    const novoUsuario = { ...formUsuario, id: Date.now() };
-    const atualizados = [...listaUsuarios, novoUsuario];
-    
-    setListaUsuarios(atualizados);
-    localStorage.setItem('usuarios_biscoite', JSON.stringify(atualizados));
-    
-    setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
-    setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
+      if (existente && existente.length > 0) {
+        setCarregandoRegistro(false);
+        return setErroFormUser('Este e-mail ou login já está cadastrado.');
+      }
+
+      // Insere na nuvem
+      const { error } = await supabase.from('usuarios').insert([{
+        nome: formUsuario.nome,
+        login: formUsuario.login,
+        senha: formUsuario.senha,
+        email: formUsuario.email,
+        setor: formUsuario.setor
+      }]);
+
+      if (error) throw error;
+
+      setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
+      setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
+    } catch (error) {
+      setErroFormUser('Erro ao criar usuário: ' + error.message);
+    } finally {
+      setCarregandoRegistro(false);
+    }
   };
 
-
-  // ================= LÓGICA CORE DO OMIE (Mantida intacta) =================
-  const registrarHistorico = (sku, descricao) => {
-    const novoRegistro = {
-      id: Date.now() + Math.random(),
-      email: usuarioLogado,
+  // ================= LÓGICA DE HISTÓRICO (SUPABASE) =================
+  const registrarHistorico = async (sku, descricao) => {
+    if (!usuarioLogado) return;
+    await supabase.from('historico_skus').insert([{
+      email_usuario: usuarioLogado.email,
       sku: sku,
-      descricao: descricao,
-      data: new Date().toLocaleDateString('pt-BR'),
-      hora: new Date().toLocaleTimeString('pt-BR')
-    };
-    setHistorico(prev => {
-      const atualizado = [novoRegistro, ...prev];
-      localStorage.setItem('historico_skus', JSON.stringify(atualizado));
-      return atualizado;
-    });
+      descricao: descricao
+    }]);
   };
 
-  const limparHistorico = () => {
-    if (window.confirm('Tem a certeza que deseja limpar o histórico deste navegador?')) {
-      setHistorico([]);
-      localStorage.removeItem('historico_skus');
+  const carregarHistorico = async () => {
+    setCarregandoHistorico(true);
+    const { data, error } = await supabase
+      .from('historico_skus')
+      .select('*')
+      .order('criado_em', { ascending: false })
+      .limit(100); // Puxa os últimos 100 para não pesar a tela
+    
+    if (data) setHistorico(data);
+    setCarregandoHistorico(false);
+  };
+
+  // Toda vez que a aba histórico abrir, ele puxa os dados fresquinhos da nuvem
+  useEffect(() => {
+    if (modo === 'historico') {
+      carregarHistorico();
+    }
+  }, [modo]);
+
+  const limparHistorico = async () => {
+    if (window.confirm('Tem a certeza que deseja APAGAR TODO o histórico da nuvem para toda a equipa?')) {
+      await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      carregarHistorico();
     }
   };
 
+  // ================= LÓGICA CORE DO OMIE =================
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar.');
@@ -156,7 +184,6 @@ function App() {
       const produtoExistente = produtosDaCategoria.find(prod => String(typeof prod === 'string' ? prod : prod.codigo).trim() === codigoTestado);
 
       if (!produtoExistente) return { codigo: codigoTestado, acao: 'IncluirProduto' };
-      
       const desc = (produtoExistente.descricao || '').toUpperCase().trim();
       if (descricoesStandBy.includes(desc)) return { codigo: codigoTestado, acao: 'AlterarProduto' };
       
@@ -190,7 +217,7 @@ function App() {
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
       
       setSkuGerado(vaga.codigo);
-      registrarHistorico(vaga.codigo, descFormatada); 
+      await registrarHistorico(vaga.codigo, descFormatada); // Envia para a nuvem
       setFormInd({ categoria: '', descricao: '', ncm: '' }); 
     } catch (err) { setErroInd(err.message); } finally { setProcInd(false); }
   };
@@ -198,7 +225,6 @@ function App() {
   const baixarPlanilhaModelo = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Modelo SKU Biscoitê');
-    // ... Layout da planilha preservado ...
     worksheet.mergeCells('A1:C1');
     worksheet.getCell('A1').value = 'Planilha de Importação de SKUs';
     worksheet.getCell('A1').font = { name: 'Arial', size: 16, color: { argb: 'FFFFFFFF' }, bold: true };
@@ -254,8 +280,9 @@ function App() {
           await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao);
           if (vaga.acao === 'IncluirProduto') todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
           else { const p = todosCodigos.find(x => x.codigo === vaga.codigo); if (p) p.descricao = descStr; }
+          
           setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso' }]);
-          registrarHistorico(vaga.codigo, descStr); 
+          await registrarHistorico(vaga.codigo, descStr); // Envia para a nuvem
         } catch (err) { setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]); }
       }
     } catch (err) { alert("Erro crítico: " + err.message); } finally { setProcMassa(false); setDadosPlanilha([]); }
@@ -280,11 +307,10 @@ function App() {
               <label className="input-label">Senha de Acesso</label>
               <input type="password" name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
             </div>
-            <button type="submit" className="btn-primary" style={{ marginTop: '16px' }}>Entrar no Sistema</button>
+            <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
+              {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
+            </button>
           </form>
-          <div style={{ textAlign: 'center', marginTop: '20px' }}>
-            <small style={{ color: 'var(--text-muted)' }}>Para o acesso mestre, use: ti / ti123</small>
-          </div>
         </div>
       </div>
     );
@@ -299,7 +325,7 @@ function App() {
           <>
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} onClick={() => setMenuAberto(false)} />
             <div className="dropdown-menu" style={{ zIndex: 999 }}>
-              <div className="dropdown-header">{usuarioLogado}</div>
+              <div className="dropdown-header">{usuarioLogado.nome}</div>
               
               <button className="dropdown-item" onClick={() => { setModo('usuarios'); setMenuAberto(false); }}>
                 👥 Criar Novo Usuário
@@ -318,7 +344,6 @@ function App() {
       <div className="app-container">
         <div className="main-card">
           
-          {/* HEADER CONDICIONAL */}
           {['individual', 'massa'].includes(modo) ? (
             <header className="header-section">
               <h2 className="header-title">Gerador de SKU</h2>
@@ -330,7 +355,7 @@ function App() {
           ) : modo === 'historico' ? (
             <header style={{ marginBottom: '40px' }}>
               <button className="btn-back" onClick={() => setModo('individual')}>⬅ Voltar para o Gerador</button>
-              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico de Criação</h2>
+              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico da Nuvem</h2>
             </header>
           ) : (
             <header style={{ marginBottom: '40px' }}>
@@ -339,7 +364,6 @@ function App() {
             </header>
           )}
 
-          {/* ABA INDIVIDUAL */}
           {modo === 'individual' && (
             <div className="tab-content">
               {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
@@ -373,7 +397,6 @@ function App() {
             </div>
           )}
 
-          {/* ABA MASSA */}
           {modo === 'massa' && (
             <div className="tab-content">
               <div className="step-container">
@@ -410,48 +433,52 @@ function App() {
             </div>
           )}
 
-          {/* ABA HISTÓRICO */}
           {modo === 'historico' && (
             <div className="tab-content">
               <div className="step-container" style={{ marginBottom: '24px' }}>
                 <div className="step-text">
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Registos Locais</p>
-                  <small style={{ color: 'var(--text-muted)' }}>Exibindo os SKUs gerados recentemente a partir deste navegador.</small>
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Registos Corporativos</p>
+                  <small style={{ color: 'var(--text-muted)' }}>Exibindo os SKUs gerados por toda a equipa (sincronizado via Supabase).</small>
                 </div>
                 <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>Limpar Registo</button>
               </div>
-              {historico.length === 0 ? (
-                <div className="upload-area" style={{ cursor: 'default' }}><p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado neste navegador ainda.</p></div>
+              
+              {carregandoHistorico ? (
+                <div className="upload-area" style={{ cursor: 'default' }}><p style={{ color: 'var(--text-muted)' }}>A carregar dados da nuvem...</p></div>
+              ) : historico.length === 0 ? (
+                <div className="upload-area" style={{ cursor: 'default' }}><p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado ainda.</p></div>
               ) : (
                 <div className="logs-container" style={{ marginTop: '0' }}>
                   <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
-                    {historico.map((item) => (
-                      <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                          <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{item.data} às {item.hora}</span>
+                    {historico.map((item) => {
+                      const dataFormatada = new Date(item.criado_em).toLocaleDateString('pt-BR');
+                      const horaFormatada = new Date(item.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                      
+                      return (
+                        <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
+                            <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{dataFormatada} às {horaFormatada}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
+                            <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
+                            <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email_usuario}</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
-                          <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
-                          <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email}</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* NOVA ABA: CRIAR USUÁRIO */}
           {modo === 'usuarios' && (
             <div className="tab-content">
               {erroFormUser && <div className="alert-error">⚠️ {erroFormUser}</div>}
-              {sucessoFormUser && <div className="alert-success">✅ {sucessoFormUser}</div>}
+              {sucessoFormUser && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoFormUser}</div>}
 
               <form onSubmit={registrarNovoUsuario} className="form-group">
-                
-                {/* Linha 1: Nome e Login */}
                 <div className="form-row">
                   <div className="input-wrapper">
                     <label className="input-label">Nome *</label>
@@ -462,8 +489,6 @@ function App() {
                     <input type="text" name="login" value={formUsuario.login} onChange={handleChangeUsuario} required className="input-field" placeholder="Ex: kaua.menezes" />
                   </div>
                 </div>
-
-                {/* Linha 2: Senha e Confirmação */}
                 <div className="form-row">
                   <div className="input-wrapper">
                     <label className="input-label">Senha *</label>
@@ -474,8 +499,6 @@ function App() {
                     <input type="password" name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={handleChangeUsuario} required className="input-field" placeholder="••••••••" />
                   </div>
                 </div>
-
-                {/* Linha 3: E-mail e Setor */}
                 <div className="form-row">
                   <div className="input-wrapper">
                     <label className="input-label">E-mail *</label>
@@ -493,8 +516,8 @@ function App() {
                   </div>
                 </div>
                 
-                <button type="submit" className="btn-primary" style={{ marginTop: '20px' }}>
-                  Registrar Usuário
+                <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '20px' }}>
+                  {carregandoRegistro ? 'A Registar...' : 'Registrar Usuário'}
                 </button>
               </form>
             </div>
