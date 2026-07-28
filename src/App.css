@@ -292,3 +292,31 @@ h1, h2, h3, .brand-font {
 /* Status Ativo/Inativo */
 .badge-ativo { background: rgba(124, 152, 102, 0.15); color: var(--success-pistachio); }
 .badge-inativo { background: rgba(217, 83, 79, 0.15); color: var(--danger-terracotta); }
+
+/* =========================================
+   TOAST (NOTIFICAÇÕES FLUTUANTES)
+   ========================================= */
+.b-toast {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  padding: 1rem 1.5rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float);
+  color: #FFF;
+  font-weight: 500;
+  font-size: 0.95rem;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: slideUpFade 0.3s ease-out forwards;
+}
+
+.b-toast-sucesso { background: var(--success-pistachio); }
+.b-toast-erro { background: var(--danger-terracotta); }
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

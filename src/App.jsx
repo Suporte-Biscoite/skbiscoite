@@ -10,6 +10,14 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
+  // ================= SISTEMA DE NOTIFICAÇÕES (TOAST) =================
+  const [toast, setToast] = useState(null); // { mensagem: '', tipo: 'sucesso' | 'erro' }
+
+  const exibirToast = (mensagem, tipo = 'sucesso') => {
+    setToast({ mensagem, tipo });
+    setTimeout(() => setToast(null), 4000); // Some após 4 segundos
+  };
+
   // ================= ESTADOS DE USUÁRIOS E LOGIN =================
   const [usuarioLogado, setUsuarioLogado] = useState(null); 
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
@@ -27,7 +35,6 @@ function App() {
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
   const [abaGestao, setAbaGestao] = useState('lista'); 
   
-  // Novo Estado: Editando Usuário Completo
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [carregandoModal, setCarregandoModal] = useState(false);
 
@@ -58,6 +65,14 @@ function App() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
   );
 
+  // Helper para iniciais do Avatar
+  const obterIniciais = (nomeStr) => {
+    if (!nomeStr) return 'U';
+    const partes = nomeStr.trim().split(' ');
+    if (partes.length >= 2) return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+    return partes[0].substring(0, 2).toUpperCase();
+  };
+
   // ================= LÓGICA DE USUÁRIOS =================
   const carregarUsuarios = async () => {
     const { data } = await supabase.from('usuarios').select('*').order('nome', { ascending: true });
@@ -82,11 +97,12 @@ function App() {
       }).eq('id', usuarioEditando.id);
       
       if (error) throw error;
-      alert(`Dados de ${usuarioEditando.nome} atualizados com sucesso!`);
+      
+      exibirToast(`Dados de ${usuarioEditando.nome} atualizados com sucesso!`, 'sucesso');
       setUsuarioEditando(null);
       carregarUsuarios();
     } catch (err) {
-      alert('Erro ao atualizar usuário.');
+      exibirToast('Erro ao atualizar usuário.', 'erro');
     } finally {
       setCarregandoModal(false);
     }
@@ -97,9 +113,9 @@ function App() {
     if (window.confirm(`Deseja gerar uma nova senha aleatória para ${usuarioEditando.nome} e enviar por e-mail?`)) {
       try {
         await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
-        alert(`[SIMULAÇÃO DE E-MAIL]\n\nEnviado para: ${usuarioEditando.email}\nNova senha de acesso: ${novaSenha}`);
+        exibirToast(`Nova senha enviada para ${usuarioEditando.email}.`, 'sucesso');
       } catch (err) {
-        alert('Erro ao gerar nova senha.');
+        exibirToast('Erro ao gerar nova senha.', 'erro');
       }
     }
   };
@@ -149,9 +165,8 @@ function App() {
       const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
-      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\nNova senha de acesso: ${novaSenha}`);
       setTelaLogin('login');
-      setSucessoLogin('Nova senha gerada com sucesso.');
+      setSucessoLogin(`Nova senha gerada e enviada para o e-mail cadastrado.`);
       setEmailRecuperacao('');
     } catch (err) {
       setErroLogin('Erro ao processar a recuperação.');
@@ -162,16 +177,14 @@ function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (credenciais.email === 'ti' && credenciais.senha === 'ti123') {
-      setUsuarioLogado({ nome: 'Mestre TI', email: 'ti@biscoite.com.br', setor: 'TI' });
-      setErroLogin(''); setCredenciais({ email: '', senha: '' });
-      return;
-    }
-
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
 
     try {
-      const { data } = await supabase.from('usuarios').select('*').or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`).eq('senha', credenciais.senha).single();
+      const { data } = await supabase.from('usuarios')
+        .select('*')
+        .or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`)
+        .eq('senha', credenciais.senha)
+        .single();
       
       if (data) {
         if (data.ativo === false) {
@@ -184,7 +197,7 @@ function App() {
         setErroLogin('Credenciais incorretas.');
       }
     } catch (err) {
-      setErroLogin('Erro de comunicação com o servidor.');
+      setErroLogin('Erro de comunicação com o servidor. Verifique os dados.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -211,6 +224,7 @@ function App() {
     if (window.confirm('Deseja apagar todo o histórico da nuvem?')) {
       await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       carregarHistorico();
+      exibirToast('Histórico limpo com sucesso.');
     }
   };
 
@@ -264,9 +278,11 @@ function App() {
     return data;
   };
 
-  // Força CAIXA ALTA na digitação do gerador individual
   const handleChangeInd = (e) => {
     let val = e.target.value.toUpperCase();
+    if (e.target.name === 'ncm') {
+      val = val.replace(/\D/g, ''); 
+    }
     setFormInd({ ...formInd, [e.target.name]: val });
   };
 
@@ -301,9 +317,9 @@ function App() {
     worksheet.getCell('A2').font = { name: 'Arial', size: 11, color: { argb: 'FFFFFFFF' } };
     worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B1E16' } };
     
-    worksheet.addRow(['(obrigatório)\nPrefixo numérico\n(ex: 400)', '(obrigatório)\nNome em maiúsculas', '(opcional)\nNCM']).height = 60;
+    worksheet.addRow(['(obrigatório)\nPrefixo numérico\n(ex: 400)', '(obrigatório)\nNome em maiúsculas', '(opcional)\nNCM apenas números']).height = 60;
     worksheet.addRow(['CATEGORIA', 'DESCRICAO', 'NCM']).font = { bold: true };
-    worksheet.addRow(['400', 'PRODUTO DE TESTE', '1905.90.20']);
+    worksheet.addRow(['400', 'PRODUTO DE TESTE', '19059020']);
     worksheet.getColumn(1).width = 25; worksheet.getColumn(2).width = 50; worksheet.getColumn(3).width = 25;
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -326,7 +342,10 @@ function App() {
   };
 
   const processarEmMassa = async () => {
-    if (dadosPlanilha.length === 0) return alert("Envie uma planilha válida.");
+    if (dadosPlanilha.length === 0) {
+      exibirToast("Envie uma planilha válida.", "erro");
+      return;
+    }
     setProcMassa(true); setLogsMassa([]);
 
     try {
@@ -335,9 +354,8 @@ function App() {
       for (let i = 0; i < dadosPlanilha.length; i++) {
         const linha = dadosPlanilha[i];
         const catStr = String(linha.CATEGORIA || '').trim();
-        // Força CAIXA ALTA na leitura da planilha
         const descStr = String(linha.DESCRICAO || '').toUpperCase().trim();
-        const ncmStr = linha.NCM ? String(linha.NCM).toUpperCase().trim() : '';
+        const ncmStr = linha.NCM ? String(linha.NCM).replace(/\D/g, '').trim() : '';
 
         if (!catStr || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
         if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr)) { setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Já existe no Omie.' }]); continue; }
@@ -352,10 +370,10 @@ function App() {
           await registrarHistorico(vaga.codigo, descStr); 
         } catch (err) { setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]); }
       }
-    } catch (err) { alert("Erro crítico: " + err.message); } finally { setProcMassa(false); setDadosPlanilha([]); }
+    } catch (err) { exibirToast("Erro crítico na importação.", "erro"); } finally { setProcMassa(false); setDadosPlanilha([]); }
   };
 
-  // ================= TELA DE LOGIN / RECUPERAÇÃO =================
+  // ================= TELA DE LOGIN =================
   if (!usuarioLogado) {
     return (
       <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
@@ -369,14 +387,14 @@ function App() {
           {sucessoLogin && <div style={{ background: '#F0FDF4', color: '#7C9866', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center', fontWeight: '500' }}>{sucessoLogin}</div>}
 
           {telaLogin === 'login' ? (
-            <form onSubmit={handleLogin}>
+            <form onSubmit={handleLogin} autoComplete="on">
               <div className="b-input-group">
                 <label>Login ou E-mail</label>
-                <input type="text" className="b-input" placeholder="nome@biscoite.com.br" value={credenciais.email} onChange={(e) => setCredenciais({...credenciais, email: e.target.value})} required />
+                <input type="text" name="username" autoComplete="username" className="b-input" placeholder="nome@biscoite.com.br" value={credenciais.email} onChange={(e) => setCredenciais({...credenciais, email: e.target.value})} required />
               </div>
               <div className="b-input-group" style={{ position: 'relative' }}>
                 <label>Senha</label>
-                <input type={mostrarSenhaLogin ? "text" : "password"} className="b-input" placeholder="••••••••" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} required style={{ paddingRight: '40px' }} />
+                <input type={mostrarSenhaLogin ? "text" : "password"} name="password" autoComplete="current-password" className="b-input" placeholder="••••••••" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} required style={{ paddingRight: '40px' }} />
                 <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', top: '38px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
                   {mostrarSenhaLogin ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                 </button>
@@ -402,9 +420,18 @@ function App() {
     );
   }
 
-  // ================= TELA PRINCIPAL =================
+  // ================= RENDERIZAÇÃO DA BARRA LATERAL BASEADA EM ACESSO (RBAC) =================
+  const ehTI = usuarioLogado?.setor?.toUpperCase() === 'TI';
+
   return (
     <div className="app-container">
+      {/* Toast Flutuante */}
+      {toast && (
+        <div className={`b-toast ${toast.tipo === 'sucesso' ? 'b-toast-sucesso' : 'b-toast-erro'}`}>
+          {toast.tipo === 'sucesso' ? '✔️' : '⚠️'} {toast.mensagem}
+        </div>
+      )}
+
       <aside className="sidebar">
         <div style={{ marginBottom: '1rem' }}>
           <h2 className="brand-font" style={{ color: 'var(--brand-gold)', fontSize: '2rem', margin: 0 }}>Biscoitê</h2>
@@ -412,36 +439,30 @@ function App() {
         </div>
         
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '2rem' }}>
-          {[
-            { id: 'individual', label: 'Gerador Individual' },
-            { id: 'massa', label: 'Importação em Massa' },
-            { id: 'usuarios', label: 'Gestão de Equipe' },
-            { id: 'historico', label: 'Histórico & Auditoria' }
-          ].map(tab => (
-            <button 
-              key={tab.id}
-              onClick={() => setModo(tab.id)}
-              style={{
-                background: modo === tab.id ? 'var(--bg-vanilla)' : 'transparent',
-                color: modo === tab.id ? 'var(--brand-gold)' : 'var(--text-espresso)',
-                border: modo === tab.id ? '1px solid var(--border-cream)' : '1px solid transparent',
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-sm)',
-                textAlign: 'left',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'block',
-                width: '100%'
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          <button onClick={() => setModo('individual')} style={{ background: modo === 'individual' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'individual' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'individual' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+            Gerador Individual
+          </button>
+          
+          <button onClick={() => setModo('massa')} style={{ background: modo === 'massa' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'massa' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'massa' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+            Importação em Massa
+          </button>
+
+          {/* TRAVA DE ACESSO: SÓ APARECE SE FOR TI */}
+          {ehTI && (
+            <>
+              <button onClick={() => setModo('usuarios')} style={{ background: modo === 'usuarios' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'usuarios' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'usuarios' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+                Gestão de Equipe
+              </button>
+              
+              <button onClick={() => setModo('historico')} style={{ background: modo === 'historico' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'historico' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'historico' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+                Histórico & Auditoria
+              </button>
+            </>
+          )}
         </nav>
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-cream)', paddingTop: '1.5rem' }}>
-          <button onClick={() => setUsuarioLogado(null)} className="b-btn-ghost" style={{ width: '100%', justifyContent: 'flex-start' }}>
+          <button onClick={() => { setUsuarioLogado(null); setModo('individual'); }} className="b-btn-ghost" style={{ width: '100%', justifyContent: 'flex-start' }}>
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
             Encerrar Sessão
           </button>
@@ -460,14 +481,13 @@ function App() {
             <p>Conectado ao ambiente corporativo Omie ERP.</p>
           </div>
           
-          {/* NOVO WIDGET DE USUÁRIO (CLEAN) */}
           <div className="user-profile-widget">
             <div className="user-info">
               <div className="user-name">{usuarioLogado.nome}</div>
               <div className="user-role">{usuarioLogado.setor}</div>
             </div>
             <div className="user-avatar">
-              {usuarioLogado.nome.charAt(0).toUpperCase()}
+              {obterIniciais(usuarioLogado.nome)}
             </div>
           </div>
         </header>
@@ -497,8 +517,8 @@ function App() {
                 </div>
 
                 <div className="b-input-group">
-                  <label>NCM (Opcional)</label>
-                  <input type="text" name="ncm" className="b-input" placeholder="1905.90.20" value={formInd.ncm} onChange={handleChangeInd} />
+                  <label>NCM (Apenas Números)</label>
+                  <input type="text" name="ncm" className="b-input" placeholder="19059020" value={formInd.ncm} onChange={handleChangeInd} />
                 </div>
               </div>
               <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
@@ -519,7 +539,6 @@ function App() {
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Importação via Excel</h3>
-              {/* BOTÃO BAIXAR PLANILHA COM NOVO ESTILO GHOST */}
               <button onClick={baixarPlanilhaModelo} className="b-btn-ghost">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 Baixar Planilha Modelo
@@ -553,14 +572,13 @@ function App() {
           </div>
         )}
 
-        {modo === 'usuarios' && (
+        {modo === 'usuarios' && ehTI && (
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>{abaGestao === 'lista' ? 'Colaboradores' : 'Novo Colaborador'}</h3>
               {abaGestao === 'lista' ? (
                 <button className="b-btn" onClick={() => setAbaGestao('criar')}>+ Adicionar Usuário</button>
               ) : (
-                /* BOTÃO VOLTAR PARA TABELA COM NOVO ESTILO GHOST */
                 <button className="b-btn-ghost" onClick={() => setAbaGestao('lista')}>
                   <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                   Voltar para Tabela
@@ -584,7 +602,7 @@ function App() {
                       <tr key={user.id}>
                         <td style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                           <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--bg-vanilla)', border: '1px solid var(--border-cream)', color: 'var(--brand-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                            {user.nome.charAt(0).toUpperCase()}
+                            {obterIniciais(user.nome)}
                           </div>
                           <div>
                             <div style={{ fontWeight: '600' }}>{user.nome}</div>
@@ -640,7 +658,7 @@ function App() {
           </div>
         )}
 
-        {modo === 'historico' && (
+        {modo === 'historico' && ehTI && (
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
@@ -675,7 +693,7 @@ function App() {
         )}
       </main>
 
-      {/* ================= NOVO MODAL: EDIÇÃO COMPLETA DE USUÁRIO ================= */}
+      {/* ================= MODAL DE EDIÇÃO COMPLETA DE USUÁRIO ================= */}
       {usuarioEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="b-card" style={{ width: '500px', boxShadow: 'var(--shadow-float)' }}>
