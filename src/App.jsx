@@ -743,7 +743,7 @@ function App() {
         )}
       </main>
 
-      {/* ================= MODAL DE EDIÇÃO DE USUÁRIO ================= */}
+      {/* ================= MODAL DE EDIÇAO DE USUÁRIO ================= */}
       {usuarioEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div className="b-card" style={{ maxWidth: '540px', boxShadow: 'var(--shadow-float)' }}>
