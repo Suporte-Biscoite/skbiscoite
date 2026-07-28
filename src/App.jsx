@@ -53,13 +53,10 @@ function App() {
   const [telaLogin, setTelaLogin] = useState('login'); 
   const [emailRecuperacao, setEmailRecuperacao] = useState('');
   
-  // Rate Limiting para a recuperação de senha
   const [cooldownRecuperacao, setCooldownRecuperacao] = useState(0);
-  
   const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
   const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
 
-  // Efeito do Cooldown
   useEffect(() => {
     if (cooldownRecuperacao > 0) {
       const timerId = setTimeout(() => setCooldownRecuperacao(cooldownRecuperacao - 1), 1000);
@@ -70,7 +67,6 @@ function App() {
   // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
   const [abaGestao, setAbaGestao] = useState('lista'); 
-  
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [carregandoModal, setCarregandoModal] = useState(false);
 
@@ -121,7 +117,6 @@ function App() {
   const salvarEdicaoUsuario = async (e) => {
     e.preventDefault();
     setCarregandoModal(true);
-
     try {
       const { error } = await supabase.from('usuarios').update({
         nome: usuarioEditando.nome,
@@ -143,37 +138,28 @@ function App() {
     }
   };
 
-  // === CHAMADA DA NOVA API DE E-MAIL (MODAL ADMIN TI) ===
   const solicitarNovaSenhaAleatoria = () => {
     confirmarAcao(
       'Gerar Nova Senha', 
       `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}?`,
       async () => {
         setCarregandoModal(true);
-        // ATUALIZADO: Gerador Seguro substituindo o 'Biscoite + Numero'
         const novaSenha = gerarSenhaForte(); 
         try {
-          // 1. Atualiza no Supabase
           await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
-          
-          // 2. Dispara e-mail
           try {
             const res = await fetch('/api/enviar-email', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha })
+              body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha, login: usuarioEditando.login })
             });
-
-            if (!res.ok) throw new Error('Falha no envio de e-mail (Resend bloqueou ou sem chave)');
-
+            if (!res.ok) throw new Error('Falha no envio de e-mail');
             exibirToast(`Senha gerada e enviada para ${usuarioEditando.email}.`, 'sucesso');
           } catch (emailErr) {
-            console.error("Falha ao enviar e-mail via API:", emailErr);
-            // FALLBACK: Mostra a senha na tela se o e-mail falhar
             exibirToast(`Senha de ${usuarioEditando.nome} alterada para: ${novaSenha}`, 'sucesso');
           }
         } catch (err) {
-          exibirToast('Erro ao acessar o banco de dados. Tente novamente.', 'erro');
+          exibirToast('Erro ao acessar o banco de dados.', 'erro');
         } finally {
           setCarregandoModal(false);
           setUsuarioEditando(null);
@@ -203,9 +189,25 @@ function App() {
       }]);
       if (error) throw error;
 
-      setSucessoFormUser(`Colaborador cadastrado com sucesso!`);
+      // Dispara o e-mail de Boas Vindas com a senha e login recém criados!
+      try {
+        await fetch('/api/enviar-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            email: formUsuario.email, 
+            nome: formUsuario.nome, 
+            senha: formUsuario.senha, 
+            login: formUsuario.login 
+          })
+        });
+      } catch (errEmail) {
+        console.error("Aviso: E-mail de boas-vindas não foi enviado.", errEmail);
+      }
+
+      setSucessoFormUser(`Colaborador cadastrado e credenciais enviadas por e-mail!`);
       setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '', ativo: true });
-      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 1500); 
+      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 2000); 
     } catch (error) {
       setErroFormUser('Erro ao criar usuário: ' + error.message);
     } finally {
@@ -213,45 +215,36 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO COM FALLBACK =================
+  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
 
     try {
-      const { data: usuario } = await supabase.from('usuarios').select('id, nome, email').eq('email', emailRecuperacao).single();
+      const { data: usuario } = await supabase.from('usuarios').select('id, nome, email, login').eq('email', emailRecuperacao).single();
       if (!usuario) {
         setErroLogin('E-mail não encontrado no sistema.');
         setCarregandoLogin(false);
         return;
       }
       
-      // ATUALIZADO: Gerador Seguro substituindo o 'Biscoite + Numero'
       const novaSenha = gerarSenhaForte();
-      
-      // 1. Atualiza no Supabase
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
-      // 2. Dispara e-mail
       try {
         const res = await fetch('/api/enviar-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha })
+          body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha, login: usuario.login })
         });
-
         if (!res.ok) throw new Error('Falha no disparo do Resend');
-
         setTelaLogin('login');
         setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
-        setCooldownRecuperacao(60); // Inicia a trava de segurança contra spam
+        setCooldownRecuperacao(60); 
       } catch (emailErr) {
-        console.error("Falha no e-mail:", emailErr);
-        // FALLBACK: Mostra a senha na tela se o e-mail falhar
         setTelaLogin('login');
         setSucessoLogin(`Atenção: E-mail indisponível. Sua nova senha é: ${novaSenha}`);
       }
-
       setEmailRecuperacao('');
     } catch (err) {
       setErroLogin('Erro ao comunicar com o banco de dados Supabase.');
@@ -308,7 +301,7 @@ function App() {
   const solicitarLimpezaHistorico = () => {
     confirmarAcao(
       'Limpar Histórico da Nuvem',
-      'Tem certeza que deseja apagar todos os registros de auditoria? Esta ação não pode ser desfeita.',
+      'Tem certeza que deseja apagar todos os registros de auditoria?',
       async () => {
         await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         carregarHistorico();
@@ -376,7 +369,6 @@ function App() {
   const gerarECadastrarIndividual = async (e) => {
     e.preventDefault();
     setProcInd(true); setSkuGerado(null); setErroInd(null);
-
     try {
       const descFormatada = formInd.descricao.trim();
       const todosCodigos = await buscarTodosCodigosOmie();
@@ -495,8 +487,6 @@ function App() {
                 <label>E-mail Corporativo</label>
                 <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="b-input" required />
               </div>
-              
-              {/* ATUALIZADO: Botão com trava de segurança Anti-Spam */}
               <button 
                 type="submit" 
                 className="b-btn" 
@@ -740,6 +730,17 @@ function App() {
                       <option value="Comercial">Comercial</option>
                     </select>
                   </div>
+                  
+                  {/* --- BOTÃO DE GERAR SENHA NO CADASTRO --- */}
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-start', marginTop: '-10px', marginBottom: '-5px' }}>
+                    <button type="button" onClick={() => {
+                      const senhaGerada = gerarSenhaForte();
+                      setFormUsuario({...formUsuario, senha: senhaGerada, confirmaSenha: senhaGerada});
+                    }} className="b-btn-ghost" style={{ padding: '0.4rem 0.8rem', color: 'var(--brand-gold)', fontSize: '0.85rem' }}>
+                      🎲 Gerar Senha Aleatória
+                    </button>
+                  </div>
+
                   <div className="b-input-group" style={{ position: 'relative' }}>
                     <label>Senha</label>
                     <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} className="b-input" required />
