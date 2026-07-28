@@ -93,7 +93,7 @@ function App() {
     }
   };
 
- // ================= LÓGICA DE LOGIN =================
+ // ================= LÓGICA DE LOGIN ==================
   const handleLogin = async (e) => {
     e.preventDefault();
     
