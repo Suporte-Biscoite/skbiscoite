@@ -22,24 +22,22 @@ function App() {
   
   const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
   const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
-  const [mostrarSenhaModal, setMostrarSenhaModal] = useState(false);
 
   // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
   const [abaGestao, setAbaGestao] = useState('lista'); 
   
-  const [usuarioModalSenha, setUsuarioModalSenha] = useState(null);
-  const [novaSenhaModal, setNovaSenhaModal] = useState('');
+  // Novo Estado: Editando Usuário Completo
+  const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [carregandoModal, setCarregandoModal] = useState(false);
 
-  const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
+  const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '', ativo: true });
   const [erroFormUser, setErroFormUser] = useState('');
   const [sucessoFormUser, setSucessoFormUser] = useState('');
   const [carregandoRegistro, setCarregandoRegistro] = useState(false);
 
-  // ================= ESTADOS CORE (NAVEGAÇÃO SUBSTITUIU TABS) =================
-  const [modo, setModo] = useState('individual'); // 'individual', 'massa', 'usuarios', 'historico'
-  
+  // ================= ESTADOS CORE =================
+  const [modo, setModo] = useState('individual'); 
   const [formInd, setFormInd] = useState({ categoria: '200', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
   const [skuGerado, setSkuGerado] = useState(null);
@@ -54,17 +52,10 @@ function App() {
 
   // ================= ÍCONES SVG MINIMALISTAS =================
   const IconeOlhoAberto = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-      <circle cx="12" cy="12" r="3"></circle>
-    </svg>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
   );
-
   const IconeOlhoFechado = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-      <line x1="1" y1="1" x2="23" y2="23"></line>
-    </svg>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
   );
 
   // ================= LÓGICA DE USUÁRIOS =================
@@ -74,33 +65,77 @@ function App() {
   };
 
   useEffect(() => {
-    if (modo === 'usuarios' && abaGestao === 'lista') {
-      carregarUsuarios();
-    }
+    if (modo === 'usuarios' && abaGestao === 'lista') carregarUsuarios();
   }, [modo, abaGestao]);
 
-  const salvarSenhaModalSubmit = async (e) => {
+  const salvarEdicaoUsuario = async (e) => {
     e.preventDefault();
-    if (!novaSenhaModal.trim()) return alert('A senha não pode estar vazia.');
     setCarregandoModal(true);
 
     try {
-      const { error } = await supabase.from('usuarios').update({ senha: novaSenhaModal }).eq('id', usuarioModalSenha.id);
+      const { error } = await supabase.from('usuarios').update({
+        nome: usuarioEditando.nome,
+        email: usuarioEditando.email,
+        login: usuarioEditando.login,
+        setor: usuarioEditando.setor,
+        ativo: usuarioEditando.ativo
+      }).eq('id', usuarioEditando.id);
+      
       if (error) throw error;
-      alert(`Senha alterada com sucesso para ${usuarioModalSenha.nome}!`);
-      setUsuarioModalSenha(null);
-      setNovaSenhaModal('');
+      alert(`Dados de ${usuarioEditando.nome} atualizados com sucesso!`);
+      setUsuarioEditando(null);
       carregarUsuarios();
     } catch (err) {
-      alert('Erro ao atualizar senha.');
+      alert('Erro ao atualizar usuário.');
     } finally {
       setCarregandoModal(false);
     }
   };
 
-  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
-  const gerarSenhaAleatoria = () => `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+  const gerarSenhaAleatoriaEditando = async () => {
+    const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+    if (window.confirm(`Deseja gerar uma nova senha aleatória para ${usuarioEditando.nome} e enviar por e-mail?`)) {
+      try {
+        await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
+        alert(`[SIMULAÇÃO DE E-MAIL]\n\nEnviado para: ${usuarioEditando.email}\nNova senha de acesso: ${novaSenha}`);
+      } catch (err) {
+        alert('Erro ao gerar nova senha.');
+      }
+    }
+  };
 
+  const registrarNovoUsuario = async (e) => {
+    e.preventDefault();
+    setErroFormUser(''); setSucessoFormUser(''); setCarregandoRegistro(true);
+
+    if (formUsuario.senha !== formUsuario.confirmaSenha) {
+      setCarregandoRegistro(false);
+      return setErroFormUser('As senhas não coincidem!');
+    }
+
+    try {
+      const { data: existente } = await supabase.from('usuarios').select('id').or(`email.eq.${formUsuario.email},login.eq.${formUsuario.login}`);
+      if (existente && existente.length > 0) {
+        setCarregandoRegistro(false);
+        return setErroFormUser('Este e-mail ou login já está cadastrado.');
+      }
+
+      const { error } = await supabase.from('usuarios').insert([{
+        nome: formUsuario.nome, login: formUsuario.login, senha: formUsuario.senha, email: formUsuario.email, setor: formUsuario.setor, ativo: true
+      }]);
+      if (error) throw error;
+
+      setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
+      setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '', ativo: true });
+      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 2000); 
+    } catch (error) {
+      setErroFormUser('Erro ao criar usuário: ' + error.message);
+    } finally {
+      setCarregandoRegistro(false);
+    }
+  };
+
+  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
@@ -111,7 +146,7 @@ function App() {
         setErroLogin('Este e-mail não foi encontrado no sistema.');
         return;
       }
-      const novaSenha = gerarSenhaAleatoria();
+      const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
       alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\nNova senha de acesso: ${novaSenha}`);
@@ -137,9 +172,14 @@ function App() {
 
     try {
       const { data } = await supabase.from('usuarios').select('*').or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`).eq('senha', credenciais.senha).single();
+      
       if (data) {
-        setUsuarioLogado(data);
-        setCredenciais({ email: '', senha: '' });
+        if (data.ativo === false) {
+          setErroLogin('Seu acesso está inativo. Contate o administrador.');
+        } else {
+          setUsuarioLogado(data);
+          setCredenciais({ email: '', senha: '' });
+        }
       } else {
         setErroLogin('Credenciais incorretas.');
       }
@@ -147,43 +187,6 @@ function App() {
       setErroLogin('Erro de comunicação com o servidor.');
     } finally {
       setCarregandoLogin(false);
-    }
-  };
-
-  const handleLogout = () => {
-    setUsuarioLogado(null);
-    setModo('individual');
-    setTelaLogin('login');
-  };
-
-  const registrarNovoUsuario = async (e) => {
-    e.preventDefault();
-    setErroFormUser(''); setSucessoFormUser(''); setCarregandoRegistro(true);
-
-    if (formUsuario.senha !== formUsuario.confirmaSenha) {
-      setCarregandoRegistro(false);
-      return setErroFormUser('As senhas não coincidem!');
-    }
-
-    try {
-      const { data: existente } = await supabase.from('usuarios').select('id').or(`email.eq.${formUsuario.email},login.eq.${formUsuario.login}`);
-      if (existente && existente.length > 0) {
-        setCarregandoRegistro(false);
-        return setErroFormUser('Este e-mail ou login já está cadastrado.');
-      }
-
-      const { error } = await supabase.from('usuarios').insert([{
-        nome: formUsuario.nome, login: formUsuario.login, senha: formUsuario.senha, email: formUsuario.email, setor: formUsuario.setor
-      }]);
-      if (error) throw error;
-
-      setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
-      setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
-      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 2000); 
-    } catch (error) {
-      setErroFormUser('Erro ao criar usuário: ' + error.message);
-    } finally {
-      setCarregandoRegistro(false);
     }
   };
 
@@ -261,14 +264,18 @@ function App() {
     return data;
   };
 
-  const handleChangeInd = (e) => setFormInd({ ...formInd, [e.target.name]: e.target.value });
+  // Força CAIXA ALTA na digitação do gerador individual
+  const handleChangeInd = (e) => {
+    let val = e.target.value.toUpperCase();
+    setFormInd({ ...formInd, [e.target.name]: val });
+  };
 
   const gerarECadastrarIndividual = async (e) => {
     e.preventDefault();
     setProcInd(true); setSkuGerado(null); setErroInd(null);
 
     try {
-      const descFormatada = formInd.descricao.toUpperCase().trim();
+      const descFormatada = formInd.descricao.trim();
       const todosCodigos = await buscarTodosCodigosOmie();
       if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
 
@@ -328,8 +335,9 @@ function App() {
       for (let i = 0; i < dadosPlanilha.length; i++) {
         const linha = dadosPlanilha[i];
         const catStr = String(linha.CATEGORIA || '').trim();
+        // Força CAIXA ALTA na leitura da planilha
         const descStr = String(linha.DESCRICAO || '').toUpperCase().trim();
-        const ncmStr = linha.NCM ? String(linha.NCM).trim() : '';
+        const ncmStr = linha.NCM ? String(linha.NCM).toUpperCase().trim() : '';
 
         if (!catStr || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
         if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr)) { setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Já existe no Omie.' }]); continue; }
@@ -366,7 +374,6 @@ function App() {
                 <label>Login ou E-mail</label>
                 <input type="text" className="b-input" placeholder="nome@biscoite.com.br" value={credenciais.email} onChange={(e) => setCredenciais({...credenciais, email: e.target.value})} required />
               </div>
-
               <div className="b-input-group" style={{ position: 'relative' }}>
                 <label>Senha</label>
                 <input type={mostrarSenhaLogin ? "text" : "password"} className="b-input" placeholder="••••••••" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} required style={{ paddingRight: '40px' }} />
@@ -374,32 +381,20 @@ function App() {
                   {mostrarSenhaLogin ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                 </button>
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', marginBottom: '2rem' }}>
-                <span onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ fontSize: '0.85rem', color: 'var(--brand-gold)', cursor: 'pointer', fontWeight: '500' }}>
-                  Esqueci minha senha
-                </span>
+                <span onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ fontSize: '0.85rem', color: 'var(--brand-gold)', cursor: 'pointer', fontWeight: '500' }}>Esqueci minha senha</span>
               </div>
-
-              <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center' }} disabled={carregandoLogin}>
-                {carregandoLogin ? 'Autenticando...' : 'Acessar Sistema'}
-              </button>
+              <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center' }} disabled={carregandoLogin}>{carregandoLogin ? 'Autenticando...' : 'Acessar Sistema'}</button>
             </form>
           ) : (
             <form onSubmit={handleRecuperarSenha}>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem', textAlign: 'center' }}>
-                Digite seu e-mail cadastrado para gerar uma nova senha provisória.
-              </p>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem', textAlign: 'center' }}>Digite seu e-mail cadastrado para gerar uma nova senha provisória.</p>
               <div className="b-input-group">
                 <label>E-mail Corporativo</label>
                 <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="b-input" required />
               </div>
-              <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }} disabled={carregandoLogin}>
-                {carregandoLogin ? 'Processando...' : 'Gerar Nova Senha'}
-              </button>
-              <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} className="b-btn-outline" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}>
-                Voltar ao Login
-              </button>
+              <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }} disabled={carregandoLogin}>{carregandoLogin ? 'Processando...' : 'Gerar Nova Senha'}</button>
+              <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} className="b-btn-ghost" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}>Voltar ao Login</button>
             </form>
           )}
         </div>
@@ -407,10 +402,9 @@ function App() {
     );
   }
 
-  // ================= TELA PRINCIPAL (APÓS LOGIN - BOUTIQUE CORPORATE) =================
+  // ================= TELA PRINCIPAL =================
   return (
     <div className="app-container">
-      {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div style={{ marginBottom: '1rem' }}>
           <h2 className="brand-font" style={{ color: 'var(--brand-gold)', fontSize: '2rem', margin: 0 }}>Biscoitê</h2>
@@ -447,13 +441,13 @@ function App() {
         </nav>
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-cream)', paddingTop: '1.5rem' }}>
-          <button onClick={handleLogout} className="b-btn-outline" style={{ width: '100%', padding: '0.6rem', border: 'none', background: 'var(--bg-vanilla)' }}>
+          <button onClick={() => setUsuarioLogado(null)} className="b-btn-ghost" style={{ width: '100%', justifyContent: 'flex-start' }}>
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
             Encerrar Sessão
           </button>
         </div>
       </aside>
 
-      {/* Área Principal de Conteúdo */}
       <main className="main-content">
         <header className="top-header">
           <div>
@@ -466,22 +460,21 @@ function App() {
             <p>Conectado ao ambiente corporativo Omie ERP.</p>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--card-white)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cream)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{usuarioLogado.nome}</div>
-              <span className="b-badge" style={{ background: '#EAE3D9', fontSize: '0.7rem' }}>{usuarioLogado.setor}</span>
+          {/* NOVO WIDGET DE USUÁRIO (CLEAN) */}
+          <div className="user-profile-widget">
+            <div className="user-info">
+              <div className="user-name">{usuarioLogado.nome}</div>
+              <div className="user-role">{usuarioLogado.setor}</div>
             </div>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--brand-gold)', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+            <div className="user-avatar">
               {usuarioLogado.nome.charAt(0).toUpperCase()}
             </div>
           </div>
         </header>
 
-        {/* ================= VIEW: INDIVIDUAL ================= */}
         {modo === 'individual' && (
           <div className="b-card fade-in">
             <h3 className="brand-font" style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Novo Produto (Individual)</h3>
-            
             {erroInd && <div style={{ background: '#FEF2F2', color: '#D9534F', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: '500' }}>{erroInd}</div>}
 
             <form onSubmit={gerarECadastrarIndividual}>
@@ -500,7 +493,7 @@ function App() {
                 
                 <div className="b-input-group">
                   <label>Descrição do Produto</label>
-                  <input type="text" name="descricao" className="b-input" placeholder="Ex: LATA MASCARPONE 200G" value={formInd.descricao} onChange={handleChangeInd} required style={{ textTransform: 'uppercase' }} />
+                  <input type="text" name="descricao" className="b-input" placeholder="Ex: LATA MASCARPONE 200G" value={formInd.descricao} onChange={handleChangeInd} required />
                 </div>
 
                 <div className="b-input-group">
@@ -509,9 +502,7 @@ function App() {
                 </div>
               </div>
               <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="submit" disabled={procInd} className="b-btn">
-                  {procInd ? 'Processando...' : 'Gerar e Sincronizar Código'}
-                </button>
+                <button type="submit" disabled={procInd} className="b-btn">{procInd ? 'Processando...' : 'Gerar e Sincronizar Código'}</button>
               </div>
             </form>
 
@@ -524,28 +515,26 @@ function App() {
           </div>
         )}
 
-        {/* ================= VIEW: MASSA ================= */}
         {modo === 'massa' && (
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Importação em Massa via Excel</h3>
-              <button onClick={baixarPlanilhaModelo} className="b-btn-outline" style={{ fontSize: '0.85rem' }}>Baixar Planilha Modelo</button>
+              <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Importação via Excel</h3>
+              {/* BOTÃO BAIXAR PLANILHA COM NOVO ESTILO GHOST */}
+              <button onClick={baixarPlanilhaModelo} className="b-btn-ghost">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Baixar Planilha Modelo
+              </button>
             </div>
             
             <div style={{ border: '2px dashed var(--border-cream)', padding: '3rem', textAlign: 'center', borderRadius: 'var(--radius-md)', marginBottom: '2rem', background: 'var(--bg-vanilla)' }}>
               <svg width="40" height="40" fill="none" stroke="var(--brand-gold)" strokeWidth="2" viewBox="0 0 24 24" style={{ marginBottom: '1rem' }}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
               <p style={{ fontWeight: '500', marginBottom: '1rem', color: 'var(--text-espresso)' }}>Anexe sua planilha .xlsx preenchida aqui</p>
-              <label className="b-btn" style={{ cursor: 'pointer' }}>
-                Selecionar Arquivo
-                <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={lerArquivoUpload} />
-              </label>
+              <label className="b-btn" style={{ cursor: 'pointer' }}>Selecionar Arquivo<input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={lerArquivoUpload} /></label>
             </div>
 
             {dadosPlanilha.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
-                <button onClick={processarEmMassa} disabled={procMassa} className="b-btn">
-                  {procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Importação (${dadosPlanilha.length} itens)`}
-                </button>
+                <button onClick={processarEmMassa} disabled={procMassa} className="b-btn">{procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Importação (${dadosPlanilha.length} itens)`}</button>
               </div>
             )}
 
@@ -564,7 +553,6 @@ function App() {
           </div>
         )}
 
-        {/* ================= VIEW: EQUIPE ================= */}
         {modo === 'usuarios' && (
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -572,7 +560,11 @@ function App() {
               {abaGestao === 'lista' ? (
                 <button className="b-btn" onClick={() => setAbaGestao('criar')}>+ Adicionar Usuário</button>
               ) : (
-                <button className="b-btn-outline" onClick={() => setAbaGestao('lista')}>Voltar para Tabela</button>
+                /* BOTÃO VOLTAR PARA TABELA COM NOVO ESTILO GHOST */
+                <button className="b-btn-ghost" onClick={() => setAbaGestao('lista')}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                  Voltar para Tabela
+                </button>
               )}
             </div>
 
@@ -583,7 +575,7 @@ function App() {
                     <tr>
                       <th>Colaborador</th>
                       <th>Login / Acesso</th>
-                      <th>Setor</th>
+                      <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Ações</th>
                     </tr>
                   </thead>
@@ -599,11 +591,11 @@ function App() {
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-mocha)' }}>{user.email}</div>
                           </div>
                         </td>
-                        <td>{user.login}</td>
-                        <td><span className="b-badge badge-comercial">{user.setor}</span></td>
+                        <td>{user.login} <br/><span style={{fontSize: '0.75rem', color: 'var(--text-mocha)'}}>Setor: {user.setor}</span></td>
+                        <td><span className={`b-badge ${user.ativo === false ? 'badge-inativo' : 'badge-ativo'}`}>{user.ativo === false ? 'INATIVO' : 'ATIVO'}</span></td>
                         <td style={{ textAlign: 'right' }}>
-                          <button onClick={() => { setUsuarioModalSenha(user); setNovaSenhaModal(''); }} className="b-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)' }}>
-                            Redefinir Senha
+                          <button onClick={() => setUsuarioEditando({ ...user })} className="b-btn-ghost" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
+                            ✏️ Editar
                           </button>
                         </td>
                       </tr>
@@ -648,12 +640,11 @@ function App() {
           </div>
         )}
 
-        {/* ================= VIEW: HISTORICO ================= */}
         {modo === 'historico' && (
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
-              <button onClick={limparHistorico} className="b-btn-outline" style={{ color: 'var(--danger-terracotta)', borderColor: '#FECACA' }}>Limpar Histórico</button>
+              <button onClick={limparHistorico} className="b-btn-ghost" style={{ color: 'var(--danger-terracotta)' }}>Limpar Histórico</button>
             </div>
             
             <div className="b-table-wrapper">
@@ -684,23 +675,55 @@ function App() {
         )}
       </main>
 
-      {/* ================= MODAL FLUTUANTE BLUR ================= */}
-      {usuarioModalSenha && (
+      {/* ================= NOVO MODAL: EDIÇÃO COMPLETA DE USUÁRIO ================= */}
+      {usuarioEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="b-card" style={{ width: '400px', boxShadow: 'var(--shadow-float)' }}>
-            <h3 className="brand-font" style={{ marginBottom: '0.5rem' }}>Redefinir Senha</h3>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem' }}>Defina uma nova senha para <strong>{usuarioModalSenha.nome}</strong>.</p>
-            <form onSubmit={salvarSenhaModalSubmit}>
-              <div className="b-input-group" style={{ position: 'relative' }}>
-                <label>Nova Senha</label>
-                <input type={mostrarSenhaModal ? "text" : "password"} className="b-input" value={novaSenhaModal} onChange={(e) => setNovaSenhaModal(e.target.value)} required autoFocus style={{ paddingRight: '40px' }} />
-                <button type="button" onClick={() => setMostrarSenhaModal(!mostrarSenhaModal)} style={{ position: 'absolute', right: '12px', top: '38px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
-                  {mostrarSenhaModal ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
+          <div className="b-card" style={{ width: '500px', boxShadow: 'var(--shadow-float)' }}>
+            <h3 className="brand-font" style={{ marginBottom: '0.5rem' }}>Perfil do Colaborador</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem' }}>Edite os dados, bloqueie o acesso ou redefina a senha de <strong>{usuarioEditando.nome}</strong>.</p>
+            
+            <form onSubmit={salvarEdicaoUsuario}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div className="b-input-group">
+                  <label>Nome</label>
+                  <input type="text" className="b-input" value={usuarioEditando.nome} onChange={(e) => setUsuarioEditando({...usuarioEditando, nome: e.target.value})} required />
+                </div>
+                <div className="b-input-group">
+                  <label>E-mail</label>
+                  <input type="email" className="b-input" value={usuarioEditando.email} onChange={(e) => setUsuarioEditando({...usuarioEditando, email: e.target.value})} required />
+                </div>
+                <div className="b-input-group">
+                  <label>Login</label>
+                  <input type="text" className="b-input" value={usuarioEditando.login} onChange={(e) => setUsuarioEditando({...usuarioEditando, login: e.target.value})} required />
+                </div>
+                <div className="b-input-group">
+                  <label>Setor</label>
+                  <select className="b-input" value={usuarioEditando.setor} onChange={(e) => setUsuarioEditando({...usuarioEditando, setor: e.target.value})} required>
+                    <option value="TI">TI</option>
+                    <option value="Fabrica">Fábrica</option>
+                    <option value="Produtos">Produtos</option>
+                    <option value="Comercial">Comercial</option>
+                  </select>
+                </div>
+                <div className="b-input-group">
+                  <label>Status da Conta</label>
+                  <select className="b-input" value={usuarioEditando.ativo !== false ? 'ativo' : 'inativo'} onChange={(e) => setUsuarioEditando({...usuarioEditando, ativo: e.target.value === 'ativo'})} required>
+                    <option value="ativo">Ativo (Permitir Login)</option>
+                    <option value="inativo">Inativo (Bloqueado)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ padding: '1rem', background: 'var(--bg-vanilla)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cream)', marginBottom: '1.5rem', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', marginBottom: '0.5rem' }}>Precisa redefinir o acesso deste usuário?</p>
+                <button type="button" onClick={gerarSenhaAleatoriaEditando} className="b-btn-ghost" style={{ color: 'var(--brand-gold)' }}>
+                  🔑 Gerar Senha Aleatória e Enviar por E-mail
                 </button>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
-                <button type="button" className="b-btn-outline" style={{ padding: '0.6rem 1rem', border: 'none', cursor: 'pointer' }} onClick={() => setUsuarioModalSenha(null)}>Cancelar</button>
-                <button type="submit" className="b-btn" disabled={carregandoModal}>{carregandoModal ? 'Salvando...' : 'Salvar Alteração'}</button>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                <button type="button" className="b-btn-ghost" onClick={() => setUsuarioEditando(null)}>Cancelar</button>
+                <button type="submit" className="b-btn" disabled={carregandoModal}>{carregandoModal ? 'Salvando...' : 'Salvar Perfil'}</button>
               </div>
             </form>
           </div>
