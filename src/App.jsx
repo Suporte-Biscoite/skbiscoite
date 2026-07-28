@@ -429,7 +429,7 @@ function App() {
       <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div className="b-card" style={{ maxWidth: '420px', padding: '3rem' }}>
           <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-            <h2 className="brand-font" style={{ color: 'var(--brand-gold)', fontSize: '2.5rem' }}>Biscoitê</h2>
+            <h2 className="brand-font" style={{ color: 'var(--brand-gold)', fontSize: '2.5rem' }}>SKBiscoitê</h2>
             <p style={{ color: 'var(--text-mocha)', marginTop: '0.5rem' }}>Acesso Corporativo</p>
           </div>
 

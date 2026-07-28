@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         // Usando o domínio oficial que você verificou
-        from: 'Sistema Biscoitê <sistema@biscolab.tech>', 
+        from: 'SKBiscoitê <skbiscoite@biscolab.tech>', 
         to: [email],
         subject: 'Redefinição de Acesso - Gestão de Pessoas',
         html: `
