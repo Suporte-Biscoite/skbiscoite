@@ -21,13 +21,13 @@ function App() {
   const [telaLogin, setTelaLogin] = useState('login'); 
   const [emailRecuperacao, setEmailRecuperacao] = useState('');
   
-  // Controle do "Olhinho"
+  // Controle do "Olhinho" de senha
   const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
   const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
 
   // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
-  const [abaGestao, setAbaGestao] = useState('lista'); // 'lista' | 'criar'
+  const [abaGestao, setAbaGestao] = useState('lista'); 
   const [idEditandoSenha, setIdEditandoSenha] = useState(null);
   const [novaSenhaEditada, setNovaSenhaEditada] = useState('');
 
@@ -36,7 +36,7 @@ function App() {
   const [sucessoFormUser, setSucessoFormUser] = useState('');
   const [carregandoRegistro, setCarregandoRegistro] = useState(false);
 
-  // ================= ESTADOS CORE DO OMIE =================
+  // ================= ESTADOS CORE =================
   const [modo, setModo] = useState('individual'); 
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
@@ -129,7 +129,6 @@ function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     
-    // ACESSO MESTRE DE EMERGÊNCIA
     if (credenciais.email === 'ti' && credenciais.senha === 'ti123') {
       setUsuarioLogado({ nome: 'Mestre TI', email: 'ti@biscoite.com.br', setor: 'TI' });
       setErroLogin('');
@@ -156,7 +155,7 @@ function App() {
         setErroLogin('Login, E-mail ou Senha incorretos.');
       }
     } catch (err) {
-      setErroLogin('Erro de comunicação com o servidor. Verifique a conexão.');
+      setErroLogin('Erro de comunicação com o servidor.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -204,7 +203,7 @@ function App() {
       setTimeout(() => { 
         setAbaGestao('lista'); 
         setSucessoFormUser(''); 
-      }, 2000); // Volta pra lista após 2s
+      }, 2000); 
     } catch (error) {
       setErroFormUser('Erro ao criar usuário: ' + error.message);
     } finally {
@@ -410,9 +409,9 @@ function App() {
                     Esqueceu a senha?
                   </button>
                 </div>
-                <div className="password-container">
-                  <input type={mostrarSenhaLogin ? "text" : "password"} name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
-                  <button type="button" className="eye-button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)}>
+                <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input type={mostrarSenhaLogin ? "text" : "password"} name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" style={{ width: '100%', paddingRight: '40px' }} required />
+                  <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}>
                     {mostrarSenhaLogin ? '🙈' : '👁️'}
                   </button>
                 </div>
@@ -486,7 +485,6 @@ function App() {
             </header>
           ) : null}
 
-          {/* === MODO INDIVIDUAL === */}
           {modo === 'individual' && (
             <div className="tab-content">
               {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
@@ -520,7 +518,6 @@ function App() {
             </div>
           )}
 
-          {/* === MODO MASSA === */}
           {modo === 'massa' && (
             <div className="tab-content">
               <div className="step-container">
@@ -557,7 +554,6 @@ function App() {
             </div>
           )}
 
-          {/* === MODO HISTÓRICO === */}
           {modo === 'historico' && (
             <div className="tab-content">
               <div className="step-container" style={{ marginBottom: '24px' }}>
@@ -598,7 +594,7 @@ function App() {
             </div>
           )}
 
-          {/* === MODO GESTÃO DE USUÁRIOS (DASHBOARD) === */}
+          {/* === A NOVA TELA DE USUÁRIOS (AESTHETIC DASHBOARD) === */}
           {modo === 'usuarios' && (
             <div className="tab-content">
               <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
@@ -614,33 +610,35 @@ function App() {
               </header>
 
               {abaGestao === 'lista' ? (
-                <div className="table-container">
-                  <table className="aesthetic-table">
+                <div style={{ width: '100%', overflowX: 'auto', marginTop: '20px', background: '#ffffff', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead>
                       <tr>
-                        <th>Colaborador</th>
-                        <th>Setor</th>
-                        <th>Login / E-mail</th>
-                        <th>Segurança</th>
+                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Colaborador</th>
+                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Setor</th>
+                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Login / E-mail</th>
+                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Segurança</th>
                       </tr>
                     </thead>
                     <tbody>
                       {usuariosCadastrados.map((user) => (
                         <tr key={user.id}>
-                          <td>
+                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>👤</div>
-                              <span style={{ fontWeight: '600' }}>{user.nome}</span>
+                              <span style={{ fontWeight: '600', color: '#334155' }}>{user.nome}</span>
                             </div>
                           </td>
-                          <td><span className="badge-setor">{user.setor}</span></td>
-                          <td>
+                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
+                            <span style={{ backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>{user.setor}</span>
+                          </td>
+                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: '500' }}>{user.login}</span>
+                              <span style={{ fontWeight: '500', color: '#334155' }}>{user.login}</span>
                               <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{user.email}</span>
                             </div>
                           </td>
-                          <td>
+                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
                             {idEditandoSenha === user.id ? (
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <input type="text" placeholder="Nova senha" value={novaSenhaEditada} onChange={(e) => setNovaSenhaEditada(e.target.value)} style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem' }} />
@@ -668,7 +666,7 @@ function App() {
                       </div>
                       <div className="input-wrapper">
                         <label className="input-label">E-mail Corporativo *</label>
-                        <input type="email" name="email" value={formUsuario.email} onChange={(e) => setFormUsuario({...formUsuario, email: e.target.value})} required className="input-field" placeholder="kaua.menezes@biscoite.com" />
+                        <input type="email" name="email" value={formUsuario.email} onChange={(e) => setFormUsuario({...formUsuario, email: e.target.value})} required className="input-field" placeholder="kaua.menezes@biscoite.com" style={{ width: '100%', boxSizing: 'border-box' }} />
                       </div>
                     </div>
                     <div className="form-row">
@@ -690,17 +688,17 @@ function App() {
                     <div className="form-row">
                       <div className="input-wrapper">
                         <label className="input-label">Senha *</label>
-                        <div className="password-container">
-                          <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} required className="input-field" placeholder="••••••••" />
-                          <button type="button" className="eye-button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)}>
+                        <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} required className="input-field" placeholder="••••••••" style={{ width: '100%', paddingRight: '40px' }} />
+                          <button type="button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)} style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}>
                             {mostrarSenhaForm ? '🙈' : '👁️'}
                           </button>
                         </div>
                       </div>
                       <div className="input-wrapper">
                         <label className="input-label">Confirme a Senha *</label>
-                        <div className="password-container">
-                          <input type={mostrarSenhaForm ? "text" : "password"} name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={(e) => setFormUsuario({...formUsuario, confirmaSenha: e.target.value})} required className="input-field" placeholder="••••••••" />
+                        <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={(e) => setFormUsuario({...formUsuario, confirmaSenha: e.target.value})} required className="input-field" placeholder="••••••••" style={{ width: '100%', paddingRight: '40px' }} />
                         </div>
                       </div>
                     </div>
