@@ -4,6 +4,25 @@ import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import './App.css';
 
+// Cole isso no topo do arquivo, de preferência fora do componente
+function gerarSenhaForte(tamanho = 12) {
+  const letrasMaiusculas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const letrasMinusculas = 'abcdefghijklmnopqrstuvwxyz';
+  const numeros = '0123456789';
+  const simbolos = '!@#$%&*?';
+  const todosCaracteres = letrasMaiusculas + letrasMinusculas + numeros + simbolos;
+  let senha = '';
+  senha += letrasMaiusculas[Math.floor(Math.random() * letrasMaiusculas.length)];
+  senha += letrasMinusculas[Math.floor(Math.random() * letrasMinusculas.length)];
+  senha += numeros[Math.floor(Math.random() * numeros.length)];
+  senha += simbolos[Math.floor(Math.random() * simbolos.length)];
+  for (let i = 4; i < tamanho; i++) {
+    senha += todosCaracteres[Math.floor(Math.random() * todosCaracteres.length)];
+  }
+  return senha.split('').sort(() => 0.5 - Math.random()).join('');
+}
+
+
 // ================= CONEXÃO SUPABASE =================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -61,6 +80,18 @@ function App() {
 
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+
+  //================= GERADOR DE SENHA =================
+
+  const [senhaFallback, setSenhaFallback] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timerId = setTimeout(() => setCooldown(cooldown - 1), 1000);
+      return () => clearTimeout(timerId);
+    }
+  }, [cooldown]);
 
   // ================= ÍCONES SVG =================
   const IconeOlhoAberto = () => (
