@@ -1,16 +1,16 @@
-/* ================= VARIÁVEIS DE CORES E FONTES ================= */
+/* ================= VARIÁVEIS E CONFIGURAÇÕES GLOBAIS ================= */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   --navy-main: #0F172A;
-  --gold-main: #EAB308; /* Amarelo Biscoitê */
+  --gold-main: #EAB308;
   --gold-hover: #CA8A04;
   --bg-color: #F8FAFC;
   --card-bg: #FFFFFF;
-  --text-main: #334155;
-  --text-muted: #64748b;
+  --text-main: #1E293B;
+  --text-muted: #64748B;
   --gray-border: #E2E8F0;
-  --input-bg: #EFF6FF; /* Azul clarinho dos inputs */
+  --input-bg: #F8FAFC;
   --danger-color: #EF4444;
   --success-color: #10B981;
 }
@@ -23,22 +23,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ================= ESTRUTURA PRINCIPAL ================= */
+/* ================= ESTRUTURA DO CARD PRINCIPAL ================= */
 .app-container {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  padding: 20px;
+  padding: 40px 20px;
   box-sizing: border-box;
 }
 
 .main-card {
   background-color: var(--card-bg);
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
   border-radius: 16px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--gray-border);
   padding: 40px;
   box-sizing: border-box;
   position: relative;
@@ -58,7 +59,7 @@ body {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  text-transform: uppercase;
+  letter-spacing: -0.025em;
 }
 
 /* ================= ABAS (INDIVIDUAL / MASSA) ================= */
@@ -84,15 +85,15 @@ body {
 .tab-btn.active {
   background-color: var(--card-bg);
   color: var(--navy-main);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .tab-content {
-  animation: fadeIn 0.3s ease-in-out;
+  animation: fadeIn 0.25s ease-in-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -115,21 +116,22 @@ body {
 .input-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .input-label {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--navy-main);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .input-field {
   width: 100%;
   padding: 12px 16px;
   border-radius: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--gray-border);
   background-color: var(--input-bg);
   font-size: 0.95rem;
   color: var(--text-main);
@@ -139,16 +141,16 @@ body {
 }
 
 .input-field:focus {
-  border-color: #93C5FD;
+  border-color: var(--navy-main);
   background-color: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.3);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
 }
 
 .input-field::placeholder {
   color: #94A3B8;
 }
 
-/* ====== FIX DO OLHINHO E INPUT DE SENHA ====== */
+/* ================= OLHINHO DE SENHA CLEAN ================= */
 .password-container {
   position: relative;
   display: flex;
@@ -158,9 +160,8 @@ body {
 
 .password-container input {
   width: 100%;
-  padding-right: 40px !important;
+  padding-right: 44px !important;
   box-sizing: border-box;
-  text-overflow: ellipsis; 
 }
 
 .eye-button {
@@ -169,7 +170,6 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 1.1rem;
   color: #94a3b8;
   padding: 0;
   display: flex;
@@ -180,34 +180,33 @@ body {
 }
 
 .eye-button:hover {
-  color: #64748b;
+  color: var(--navy-main);
 }
 
 /* ================= BOTÕES ================= */
 .btn-primary {
-  background-color: var(--gold-main);
+  background-color: var(--navy-main);
   color: #FFFFFF;
   border: none;
-  padding: 14px 24px;
+  padding: 12px 24px;
   border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s, transform 0.1s;
   width: 100%;
-  text-transform: uppercase;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--gold-hover);
+  background-color: #1E293B;
 }
 
 .btn-primary:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.99);
 }
 
 .btn-primary:disabled {
-  background-color: #D1D5DB;
+  background-color: #CBD5E1;
   cursor: not-allowed;
 }
 
@@ -215,7 +214,7 @@ body {
   background-color: transparent;
   color: var(--text-main);
   border: 1px solid var(--gray-border);
-  padding: 10px 20px;
+  padding: 10px 18px;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
@@ -224,7 +223,7 @@ body {
 }
 
 .btn-secondary:hover {
-  background-color: #F8FAFC;
+  background-color: #F1F5F9;
   border-color: #CBD5E1;
 }
 
@@ -232,26 +231,26 @@ body {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .btn-back:hover {
   color: var(--navy-main);
 }
 
-/* ================= ALERTAS E MENSAGENS ================= */
+/* ================= ALERTAS ================= */
 .alert-error {
   background-color: #FEF2F2;
   border: 1px solid #FECACA;
   color: var(--danger-color);
-  padding: 16px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: 8px;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
 }
 
@@ -259,10 +258,10 @@ body {
   background-color: #F0FDF4;
   border: 1px solid #BBF7D0;
   color: var(--success-color);
-  padding: 16px;
-  border-radius: 10px;
+  padding: 14px 16px;
+  border-radius: 8px;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
 }
 
@@ -277,11 +276,11 @@ body {
 
 .success-card h1 {
   color: var(--success-color);
-  font-size: 2.5rem;
+  font-size: 2.2rem;
   margin: 10px 0 0 0;
 }
 
-/* ================= MENU DO USUÁRIO ================= */
+/* ================= MENU DO USUÁRIO (AVATAR) ================= */
 .user-menu-fixed {
   position: fixed;
   top: 20px;
@@ -290,57 +289,56 @@ body {
 }
 
 .avatar-btn {
-  width: 45px;
-  height: 45px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background-color: var(--card-bg);
-  border: 2px solid var(--gray-border);
+  border: 1px solid var(--gray-border);
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   transition: all 0.2s;
 }
 
 .avatar-btn:hover {
-  border-color: var(--gold-main);
+  border-color: var(--navy-main);
 }
 
 .dropdown-menu {
   position: absolute;
-  top: 55px;
+  top: 52px;
   right: 0;
   background: var(--card-bg);
   border: 1px solid var(--gray-border);
   border-radius: 12px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  min-width: 200px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  min-width: 210px;
   overflow: hidden;
-  animation: fadeIn 0.2s ease-in-out;
 }
 
 .dropdown-header {
-  padding: 15px;
+  padding: 14px 16px;
   background-color: #F8FAFC;
   border-bottom: 1px solid var(--gray-border);
   font-weight: 600;
+  font-size: 0.9rem;
   color: var(--navy-main);
-  text-align: center;
 }
 
 .dropdown-item {
   width: 100%;
   text-align: left;
-  padding: 12px 15px;
+  padding: 12px 16px;
   background: none;
   border: none;
   border-bottom: 1px solid #F1F5F9;
   font-size: 0.9rem;
   color: var(--text-main);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.15s;
 }
 
 .dropdown-item:last-child {
@@ -353,20 +351,20 @@ body {
 
 .dropdown-item.danger {
   color: var(--danger-color);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dropdown-item.danger:hover {
   background-color: #FEF2F2;
 }
 
-/* ================= ÁREA DE UPLOAD E LOGS ================= */
+/* ================= UPLOAD E LOGS ================= */
 .step-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background-color: #F8FAFC;
-  padding: 15px 20px;
+  padding: 20px;
   border-radius: 10px;
   margin-bottom: 20px;
   border: 1px solid var(--gray-border);
@@ -382,8 +380,8 @@ body {
 }
 
 .upload-area:hover {
-  border-color: var(--gold-main);
-  background-color: #FEFCE8;
+  border-color: var(--navy-main);
+  background-color: #F1F5F9;
 }
 
 .upload-input {
@@ -405,20 +403,21 @@ body {
   border-radius: 8px;
   font-size: 0.9rem;
   background-color: #FFFFFF;
+  border: 1px solid var(--gray-border);
 }
 
 .log-success { border-left: 4px solid var(--success-color); }
 .log-error { border-left: 4px solid var(--danger-color); }
 
-/* ================= TABELA DE GESTÃO (AESTHETIC) ================= */
+/* ================= TABELA DE GESTÃO (ESTILO ERP MODERNO) ================= */
 .table-container {
   width: 100%;
   overflow-x: auto;
   margin-top: 20px;
   background: #ffffff;
   border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--gray-border);
 }
 
 .aesthetic-table {
@@ -428,19 +427,21 @@ body {
 }
 
 .aesthetic-table th {
-  padding: 16px;
-  font-size: 0.85rem;
-  color: #64748b;
-  font-weight: 600;
-  border-bottom: 1px solid #e2e8f0;
-  background-color: #f8fafc;
+  padding: 14px 20px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  border-bottom: 1px solid var(--gray-border);
+  background-color: #F8FAFC;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .aesthetic-table td {
-  padding: 16px;
+  padding: 16px 20px;
   font-size: 0.9rem;
-  color: #334155;
-  border-bottom: 1px solid #f1f5f9;
+  color: var(--text-main);
+  border-bottom: 1px solid #F1F5F9;
   vertical-align: middle;
 }
 
@@ -448,20 +449,49 @@ body {
   border-bottom: none;
 }
 
+.aesthetic-table tr:hover td {
+  background-color: #FAFAFA;
+}
+
 .badge-setor {
-  background-color: #fef3c7;
-  color: #d97706;
+  background-color: #EFF6FF;
+  color: #1E40AF;
   padding: 4px 10px;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   display: inline-block;
+  letter-spacing: 0.03em;
+}
+
+/* ================= MODAL DE REDEFINIÇÃO DE SENHA ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-card {
+  background-color: #FFFFFF;
+  width: 100%;
+  max-width: 420px;
+  border-radius: 16px;
+  padding: 30px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--gray-border);
+  box-sizing: border-box;
 }
 
 /* ================= RESPONSIVIDADE ================= */
 @media (max-width: 600px) {
-  .main-card { padding: 25px 20px; }
-  .form-row { flex-direction: column; gap: 20px; }
+  .main-card { padding: 25px 16px; }
+  .form-row { flex-direction: column; gap: 15px; }
   .step-container { flex-direction: column; text-align: center; gap: 15px; }
 }

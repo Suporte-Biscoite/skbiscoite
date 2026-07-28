@@ -21,15 +21,19 @@ function App() {
   const [telaLogin, setTelaLogin] = useState('login'); 
   const [emailRecuperacao, setEmailRecuperacao] = useState('');
   
-  // Controle do "Olhinho" de senha
+  // Controle do "Olhinho" minimalista
   const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
   const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
+  const [mostrarSenhaModal, setMostrarSenhaModal] = useState(false);
 
   // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
   const [abaGestao, setAbaGestao] = useState('lista'); 
-  const [idEditandoSenha, setIdEditandoSenha] = useState(null);
-  const [novaSenhaEditada, setNovaSenhaEditada] = useState('');
+  
+  // Estado do Modal de Edição de Senha
+  const [usuarioModalSenha, setUsuarioModalSenha] = useState(null);
+  const [novaSenhaModal, setNovaSenhaModal] = useState('');
+  const [carregandoModal, setCarregandoModal] = useState(false);
 
   const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
   const [erroFormUser, setErroFormUser] = useState('');
@@ -50,12 +54,24 @@ function App() {
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-  // ================= LÓGICA DE USUÁRIOS (DASHBOARD) =================
+  // ================= ÍCONES SVG MINIMALISTAS =================
+  const IconeOlhoAberto = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+  );
+
+  const IconeOlhoFechado = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+      <line x1="1" y1="1" x2="23" y2="23"></line>
+    </svg>
+  );
+
+  // ================= LÓGICA DE USUÁRIOS =================
   const carregarUsuarios = async () => {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .order('nome', { ascending: true });
+    const { data } = await supabase.from('usuarios').select('*').order('nome', { ascending: true });
     if (data) setUsuariosCadastrados(data);
   };
 
@@ -65,21 +81,26 @@ function App() {
     }
   }, [modo, abaGestao]);
 
-  const salvarNovaSenha = async (idUsuario) => {
-    if (novaSenhaEditada.trim() === '') return alert('A senha não pode ser vazia.');
+  const salvarSenhaModalSubmit = async (e) => {
+    e.preventDefault();
+    if (!novaSenhaModal.trim()) return alert('A senha não pode estar vazia.');
+    setCarregandoModal(true);
+
     try {
       const { error } = await supabase
         .from('usuarios')
-        .update({ senha: novaSenhaEditada })
-        .eq('id', idUsuario);
+        .update({ senha: novaSenhaModal })
+        .eq('id', usuarioModalSenha.id);
       
       if (error) throw error;
-      alert('Senha atualizada com sucesso!');
-      setIdEditandoSenha(null);
-      setNovaSenhaEditada('');
+      alert(`Senha alterada com sucesso para ${usuarioModalSenha.nome}!`);
+      setUsuarioModalSenha(null);
+      setNovaSenhaModal('');
       carregarUsuarios();
     } catch (err) {
       alert('Erro ao atualizar senha.');
+    } finally {
+      setCarregandoModal(false);
     }
   };
 
@@ -93,7 +114,7 @@ function App() {
     setSucessoLogin('');
 
     try {
-      const { data: usuario, error: erroBusca } = await supabase
+      const { data: usuario } = await supabase
         .from('usuarios')
         .select('id, nome, email')
         .eq('email', emailRecuperacao)
@@ -106,21 +127,14 @@ function App() {
       }
 
       const novaSenha = gerarSenhaAleatoria();
-      const { error: erroUpdate } = await supabase
-        .from('usuarios')
-        .update({ senha: novaSenha })
-        .eq('email', emailRecuperacao);
+      await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
-      if (erroUpdate) throw erroUpdate;
-
-      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\n\nSua senha foi redefinida com sucesso.\nSua nova senha de acesso é: ${novaSenha}`);
-
+      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\nNova senha de acesso: ${novaSenha}`);
       setTelaLogin('login');
-      setSucessoLogin('Sua nova senha foi gerada. Verifique seu e-mail (ou o alerta na tela).');
+      setSucessoLogin('Nova senha gerada com sucesso.');
       setEmailRecuperacao('');
-      
     } catch (err) {
-      setErroLogin('Erro ao processar a recuperação de senha.');
+      setErroLogin('Erro ao processar a recuperação.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -141,7 +155,7 @@ function App() {
     setSucessoLogin('');
 
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('usuarios')
         .select('*')
         .or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`)
@@ -152,7 +166,7 @@ function App() {
         setUsuarioLogado(data);
         setCredenciais({ email: '', senha: '' });
       } else {
-        setErroLogin('Login, E-mail ou Senha incorretos.');
+        setErroLogin('Credenciais incorretas.');
       }
     } catch (err) {
       setErroLogin('Erro de comunicação com o servidor.');
@@ -211,24 +225,15 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE HISTÓRICO =================
+  // ================= LÓGICA DE HISTÓRICO E OMIE =================
   const registrarHistorico = async (sku, descricao) => {
     if (!usuarioLogado) return;
-    await supabase.from('historico_skus').insert([{
-      email_usuario: usuarioLogado.email,
-      sku: sku,
-      descricao: descricao
-    }]);
+    await supabase.from('historico_skus').insert([{ email_usuario: usuarioLogado.email, sku, descricao }]);
   };
 
   const carregarHistorico = async () => {
     setCarregandoHistorico(true);
-    const { data, error } = await supabase
-      .from('historico_skus')
-      .select('*')
-      .order('criado_em', { ascending: false })
-      .limit(100); 
-    
+    const { data } = await supabase.from('historico_skus').select('*').order('criado_em', { ascending: false }).limit(100); 
     if (data) setHistorico(data);
     setCarregandoHistorico(false);
   };
@@ -238,13 +243,12 @@ function App() {
   }, [modo]);
 
   const limparHistorico = async () => {
-    if (window.confirm('Tem a certeza que deseja APAGAR TODO o histórico da nuvem para toda a equipe?')) {
+    if (window.confirm('Deseja apagar todo o histórico da nuvem?')) {
       await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       carregarHistorico();
     }
   };
 
-  // ================= LÓGICA CORE DO OMIE =================
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar.');
@@ -321,12 +325,12 @@ function App() {
     worksheet.mergeCells('A1:C1');
     worksheet.getCell('A1').value = 'Planilha de Importação de SKUs';
     worksheet.getCell('A1').font = { name: 'Arial', size: 16, color: { argb: 'FFFFFFFF' }, bold: true };
-    worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF4B4B' } };
+    worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
     
     worksheet.mergeCells('A2:C2');
     worksheet.getCell('A2').value = 'Módulo: Gestão de Produtos Biscoitê';
     worksheet.getCell('A2').font = { name: 'Arial', size: 11, color: { argb: 'FFFFFFFF' } };
-    worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF4B4B' } };
+    worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
     
     worksheet.addRow(['(obrigatório)\nPrefixo numérico\n(ex: 400)', '(obrigatório)\nNome em maiúsculas', '(opcional)\nNCM']).height = 60;
     worksheet.addRow(['CATEGORIA', 'DESCRICAO', 'NCM']).font = { bold: true };
@@ -385,16 +389,14 @@ function App() {
   if (!usuarioLogado) {
     return (
       <div className="app-container">
-        <div className="main-card" style={{ maxWidth: '420px', margin: '0 auto', padding: '50px 40px' }}>
-          <div style={{ textAlign: 'center', marginBottom: '35px' }}>
-            <h2 className="header-title" style={{ marginBottom: '8px' }}>Acesso Restrito</h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', margin: 0, fontWeight: '500' }}>
-              Gerador de SKUs - Biscoitê
-            </p>
+        <div className="main-card" style={{ maxWidth: '400px', margin: '0 auto', padding: '40px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+            <h2 className="header-title" style={{ marginBottom: '6px' }}>Biscoitê</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>Gerenciamento Interno de SKUs</p>
           </div>
           
-          {erroLogin && <div className="alert-error" style={{ marginBottom: '20px' }}>⚠️ {erroLogin}</div>}
-          {sucessoLogin && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoLogin}</div>}
+          {erroLogin && <div className="alert-error" style={{ marginBottom: '20px' }}>{erroLogin}</div>}
+          {sucessoLogin && <div className="alert-success" style={{ marginBottom: '20px' }}>{sucessoLogin}</div>}
 
           {telaLogin === 'login' ? (
             <form className="form-group" onSubmit={handleLogin}>
@@ -404,36 +406,36 @@ function App() {
               </div>
               <div className="input-wrapper">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label className="input-label">Senha de Acesso</label>
-                  <button type="button" onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--gold-main)', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', padding: 0 }}>
-                    Esqueceu a senha?
+                  <label className="input-label">Senha</label>
+                  <button type="button" onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--navy-main)', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', padding: 0 }}>
+                    Esqueceu?
                   </button>
                 </div>
-                <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <input type={mostrarSenhaLogin ? "text" : "password"} name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" style={{ width: '100%', paddingRight: '40px' }} required />
-                  <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}>
-                    {mostrarSenhaLogin ? '🙈' : '👁️'}
+                <div className="password-container">
+                  <input type={mostrarSenhaLogin ? "text" : "password"} name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
+                  <button type="button" className="eye-button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)}>
+                    {mostrarSenhaLogin ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                   </button>
                 </div>
               </div>
-              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
-                {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
+              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '10px' }}>
+                {carregandoLogin ? 'Autenticando...' : 'Acessar Sistema'}
               </button>
             </form>
           ) : (
             <form className="form-group" onSubmit={handleRecuperarSenha}>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: '10px', textAlign: 'center' }}>
-                Digite seu e-mail cadastrado. Enviaremos uma nova senha de acesso para você.
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: '1.4' }}>
+                Digite seu e-mail cadastrado para gerar uma nova senha provisória.
               </p>
               <div className="input-wrapper">
                 <label className="input-label">E-mail Corporativo</label>
                 <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="input-field" required />
               </div>
-              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
-                {carregandoLogin ? 'A processar...' : 'Gerar Nova Senha'}
+              <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '10px' }}>
+                {carregandoLogin ? 'Processando...' : 'Gerar Nova Senha'}
               </button>
-              <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', marginTop: '15px', width: '100%' }}>
-                Voltar para o Login
+              <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', marginTop: '15px', width: '100%' }}>
+                Voltar ao Login
               </button>
             </form>
           )}
@@ -449,15 +451,14 @@ function App() {
         <button className="avatar-btn" onClick={() => setMenuAberto(!menuAberto)}>👤</button>
         {menuAberto && (
           <>
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} onClick={() => setMenuAberto(false)} />
+            <div style={{ position: 'fixed', inset: 0, zIndex: 998 }} onClick={() => setMenuAberto(false)} />
             <div className="dropdown-menu" style={{ zIndex: 999 }}>
               <div className="dropdown-header">{usuarioLogado.nome}</div>
-              
               <button className="dropdown-item" onClick={() => { setModo('usuarios'); setAbaGestao('lista'); setMenuAberto(false); }}>
                 👥 Gestão de Equipe
               </button>
               <button className="dropdown-item" onClick={() => { setModo('historico'); setMenuAberto(false); }}>
-                📄 Ver Histórico
+                📄 Histórico de SKUs
               </button>
               <button className="dropdown-item danger" onClick={handleLogout}>
                 🚪 Sair do Sistema
@@ -475,22 +476,22 @@ function App() {
               <h2 className="header-title">Gerador de SKU</h2>
               <div className="segmented-control">
                 <button className={`tab-btn ${modo === 'individual' ? 'active' : ''}`} onClick={() => setModo('individual')}>Individual</button>
-                <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>Em Massa (Planilha)</button>
+                <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>Em Massa</button>
               </div>
             </header>
           ) : modo === 'historico' ? (
-            <header style={{ marginBottom: '40px' }}>
-              <button className="btn-back" onClick={() => setModo('individual')}>⬅ Voltar para o Gerador</button>
-              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico da Nuvem</h2>
+            <header style={{ marginBottom: '30px' }}>
+              <button className="btn-back" onClick={() => setModo('individual')}>← Voltar para o Gerador</button>
+              <h2 className="header-title" style={{ margin: 0 }}>Histórico da Nuvem</h2>
             </header>
           ) : null}
 
           {modo === 'individual' && (
             <div className="tab-content">
-              {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
+              {erroInd && <div className="alert-error" style={{ marginBottom: '20px' }}>{erroInd}</div>}
               <form onSubmit={gerarECadastrarIndividual} className="form-group">
                 <div className="input-wrapper">
-                  <label className="input-label">Prefixo (Categoria) *</label>
+                  <label className="input-label">Prefixo (Categoria)</label>
                   <select name="categoria" value={formInd.categoria} onChange={handleChangeInd} required className="input-field">
                     <option value="">Selecione a raiz do código...</option>
                     <option value="200">200 - EMBALAGEM</option>
@@ -501,19 +502,22 @@ function App() {
                   </select>
                 </div>
                 <div className="input-wrapper">
-                  <label className="input-label">Descrição Provisória / Final *</label>
-                  <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="SERÁ CONVERTIDO PARA MAIÚSCULAS" className="input-field" style={{ textTransform: 'uppercase' }} />
+                  <label className="input-label">Descrição do Produto</label>
+                  <input type="text" name="descricao" value={formInd.descricao} onChange={handleChangeInd} required placeholder="EX: BISCOITO AMANTEIGADO" className="input-field" style={{ textTransform: 'uppercase' }} />
                 </div>
                 <div className="input-wrapper">
                   <label className="input-label">NCM (Opcional)</label>
-                  <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="Padrão automático: 1905.90.20" className="input-field" />
+                  <input type="text" name="ncm" value={formInd.ncm} onChange={handleChangeInd} placeholder="1905.90.20" className="input-field" />
                 </div>
-                <button type="submit" disabled={procInd} className="btn-primary">
-                  {procInd ? 'A Processar Integração...' : 'Descobrir Próximo SKU e Registar'}
+                <button type="submit" disabled={procInd} className="btn-primary" style={{ marginTop: '10px' }}>
+                  {procInd ? 'Processando Integração...' : 'Gerar e Registrar SKU'}
                 </button>
               </form>
               {skuGerado && (
-                <div className="success-card"><p>Sucesso! Novo produto registado:</p><h1>{skuGerado}</h1></div>
+                <div className="success-card">
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>CÓDIGO GERADO COM SUCESSO</span>
+                  <h1>{skuGerado}</h1>
+                </div>
               )}
             </div>
           )}
@@ -521,31 +525,30 @@ function App() {
           {modo === 'massa' && (
             <div className="tab-content">
               <div className="step-container">
-                <div className="step-text">
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Passo 1: Baixe o modelo padrão</p>
-                  <small style={{ color: 'var(--text-muted)' }}>A nossa planilha modelo agora é estruturada com cabeçalhos informativos idênticos ao padrão do ERP Omie.</small>
+                <div>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: 'var(--navy-main)' }}>Planilha de Importação</p>
+                  <small style={{ color: 'var(--text-muted)' }}>Baixe o modelo padrão compatível com o ERP Omie.</small>
                 </div>
-                <button onClick={baixarPlanilhaModelo} className="btn-secondary" style={{ flexShrink: 0 }}>Baixar Modelo</button>
+                <button onClick={baixarPlanilhaModelo} className="btn-secondary">Baixar Modelo</button>
               </div>
-              <div className="input-wrapper" style={{ marginBottom: '24px' }}>
-                <label className="input-label" style={{ marginBottom: '10px' }}>Passo 2: Anexe o Arquivo .XLSX</label>
+              <div className="input-wrapper" style={{ marginBottom: '20px' }}>
+                <label className="input-label">Anexar Arquivo Excel (.XLSX)</label>
                 <div className="upload-area">
                   <input type="file" accept=".xlsx, .xls" onChange={lerArquivoUpload} className="upload-input" />
                 </div>
               </div>
               {dadosPlanilha.length > 0 && (
                 <button onClick={processarEmMassa} disabled={procMassa} className="btn-primary">
-                  {procMassa ? `A integrar ${dadosPlanilha.length} linhas...` : `Iniciar Criação em Massa (${dadosPlanilha.length})`}
+                  {procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Importação (${dadosPlanilha.length} itens)`}
                 </button>
               )}
               {logsMassa.length > 0 && (
                 <div className="logs-container">
-                  <label className="input-label" style={{ fontSize: '1rem', marginBottom: '16px' }}>Status do Processamento</label>
-                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                  <label className="input-label" style={{ marginBottom: '12px', display: 'block' }}>Resultados do Processamento</label>
+                  <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
                     {logsMassa.map((log, i) => (
                       <div key={i} className={`log-item ${log.status.includes('Sucesso') ? 'log-success' : 'log-error'}`}>
-                        <span><strong>{log.status.includes('Sucesso') ? '✅' : '❌'} {log.sku || 'Falha'}</strong> - {log.desc}</span>
-                        {log.msg && <span style={{ opacity: 0.8, fontSize: '0.8rem' }}>{log.msg}</span>}
+                        <span><strong>{log.sku || 'Aviso'}</strong> - {log.desc || log.msg}</span>
                       </div>
                     ))}
                   </div>
@@ -556,98 +559,85 @@ function App() {
 
           {modo === 'historico' && (
             <div className="tab-content">
-              <div className="step-container" style={{ marginBottom: '24px' }}>
-                <div className="step-text">
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Registos Corporativos</p>
-                  <small style={{ color: 'var(--text-muted)' }}>Exibindo os SKUs gerados por toda a equipe (sincronizado via Supabase).</small>
+              <div className="step-container" style={{ marginBottom: '20px' }}>
+                <div>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: 'var(--navy-main)' }}>Logs da Nuvem</p>
+                  <small style={{ color: 'var(--text-muted)' }}>Registros gerados por toda a equipe via Supabase.</small>
                 </div>
-                <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>Limpar Registo</button>
+                <button onClick={limparHistorico} className="btn-secondary" style={{ color: '#EF4444', borderColor: '#FECACA' }}>Limpar Histórico</button>
               </div>
               
               {carregandoHistorico ? (
-                <div className="upload-area" style={{ cursor: 'default' }}><p style={{ color: 'var(--text-muted)' }}>A carregar dados da nuvem...</p></div>
+                <div className="upload-area"><p style={{ color: 'var(--text-muted)', margin: 0 }}>Carregando dados...</p></div>
               ) : historico.length === 0 ? (
-                <div className="upload-area" style={{ cursor: 'default' }}><p style={{ color: 'var(--text-muted)' }}>Nenhum SKU gerado ainda.</p></div>
+                <div className="upload-area"><p style={{ color: 'var(--text-muted)', margin: 0 }}>Nenhum registro encontrado.</p></div>
               ) : (
-                <div className="logs-container" style={{ marginTop: '0' }}>
-                  <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
-                    {historico.map((item) => {
-                      const dataFormatada = new Date(item.criado_em).toLocaleDateString('pt-BR');
-                      const horaFormatada = new Date(item.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                      
-                      return (
-                        <div key={item.id} className="log-item" style={{ backgroundColor: '#FAFAFA', border: '1px solid var(--gray-border)', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                            <span style={{ color: 'var(--navy-main)' }}><strong>SKU: {item.sku}</strong></span>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{dataFormatada} às {horaFormatada}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.85rem' }}>
-                            <span style={{ color: 'var(--text-main)', fontWeight: '500' }}>{item.descricao}</span>
-                            <span style={{ color: 'var(--gold-main)', fontWeight: '600' }}>👤 {item.email_usuario}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {historico.map((item) => (
+                    <div key={item.id} style={{ padding: '14px 16px', background: '#FAFAFA', border: '1px solid var(--gray-border)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontWeight: '700', color: 'var(--navy-main)', marginRight: '12px' }}>{item.sku}</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-main)' }}>{item.descricao}</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block' }}>{new Date(item.criado_em).toLocaleDateString('pt-BR')}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{item.email_usuario}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           )}
 
-          {/* === A NOVA TELA DE USUÁRIOS (AESTHETIC DASHBOARD) === */}
+          {/* === GESTÃO DE PESSOAS (ESTILO ERP MODERNO) === */}
           {modo === 'usuarios' && (
             <div className="tab-content">
-              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
                 <div>
-                  <button className="btn-back" onClick={() => setModo('individual')} style={{ padding: 0, marginBottom: '10px' }}>⬅ Voltar para SKUs</button>
+                  <button className="btn-back" onClick={() => setModo('individual')}>← Voltar para SKUs</button>
                   <h2 className="header-title" style={{ margin: 0 }}>Gestão de Pessoas</h2>
                 </div>
                 {abaGestao === 'lista' ? (
-                  <button className="btn-primary" style={{ width: 'auto', padding: '10px 20px' }} onClick={() => setAbaGestao('criar')}>+ Novo Usuário</button>
+                  <button className="btn-primary" style={{ width: 'auto', padding: '10px 18px', fontSize: '0.85rem' }} onClick={() => setAbaGestao('criar')}>+ Novo Usuário</button>
                 ) : (
-                  <button className="btn-secondary" style={{ width: 'auto', padding: '10px 20px' }} onClick={() => setAbaGestao('lista')}>Ver Tabela</button>
+                  <button className="btn-secondary" onClick={() => setAbaGestao('lista')}>Ver Tabela</button>
                 )}
               </header>
 
               {abaGestao === 'lista' ? (
-                <div style={{ width: '100%', overflowX: 'auto', marginTop: '20px', background: '#ffffff', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', border: '1px solid #f1f5f9' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <div className="table-container">
+                  <table className="aesthetic-table">
                     <thead>
                       <tr>
-                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Colaborador</th>
-                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Setor</th>
-                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Login / E-mail</th>
-                        <th style={{ padding: '16px', fontSize: '0.85rem', color: '#64748b', fontWeight: '600', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>Segurança</th>
+                        <th>Colaborador</th>
+                        <th>Setor</th>
+                        <th>Login / E-mail</th>
+                        <th style={{ textAlign: 'right' }}>Ações</th>
                       </tr>
                     </thead>
                     <tbody>
                       {usuariosCadastrados.map((user) => (
                         <tr key={user.id}>
-                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
+                          <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>👤</div>
-                              <span style={{ fontWeight: '600', color: '#334155' }}>{user.nome}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
-                            <span style={{ backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>{user.setor}</span>
-                          </td>
-                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: '500', color: '#334155' }}>{user.login}</span>
-                              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{user.email}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }}>
-                            {idEditandoSenha === user.id ? (
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <input type="text" placeholder="Nova senha" value={novaSenhaEditada} onChange={(e) => setNovaSenhaEditada(e.target.value)} style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem' }} />
-                                <button onClick={() => salvarNovaSenha(user.id)} style={{ background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 'bold' }}>Salvar</button>
-                                <button onClick={() => { setIdEditandoSenha(null); setNovaSenhaEditada(''); }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer' }}>Cancelar</button>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, color: 'var(--navy-main)' }}>
+                                {user.nome.charAt(0).toUpperCase()}
                               </div>
-                            ) : (
-                              <button onClick={() => setIdEditandoSenha(user.id)} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 12px', color: '#64748b', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600' }}>✏️ Redefinir Senha</button>
-                            )}
+                              <span style={{ fontWeight: '600' }}>{user.nome}</span>
+                            </div>
+                          </td>
+                          <td><span className="badge-setor">{user.setor}</span></td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: '500' }}>{user.login}</span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{user.email}</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button onClick={() => { setUsuarioModalSenha(user); setNovaSenhaModal(''); }} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                              🔑 Alterar Senha
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -655,27 +645,27 @@ function App() {
                   </table>
                 </div>
               ) : (
-                <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', padding: '30px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  {erroFormUser && <div className="alert-error">⚠️ {erroFormUser}</div>}
-                  {sucessoFormUser && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoFormUser}</div>}
+                <div style={{ maxWidth: '540px', margin: '0 auto', background: '#F8FAFC', padding: '30px', borderRadius: '12px', border: '1px solid var(--gray-border)' }}>
+                  {erroFormUser && <div className="alert-error" style={{ marginBottom: '20px' }}>{erroFormUser}</div>}
+                  {sucessoFormUser && <div className="alert-success" style={{ marginBottom: '20px' }}>{sucessoFormUser}</div>}
                   <form onSubmit={registrarNovoUsuario} className="form-group">
                     <div className="form-row">
                       <div className="input-wrapper">
-                        <label className="input-label">Nome Completo *</label>
-                        <input type="text" name="nome" value={formUsuario.nome} onChange={(e) => setFormUsuario({...formUsuario, nome: e.target.value})} required className="input-field" placeholder="Ex: Kauã Menezes" />
+                        <label className="input-label">Nome Completo</label>
+                        <input type="text" name="nome" value={formUsuario.nome} onChange={(e) => setFormUsuario({...formUsuario, nome: e.target.value})} required className="input-field" placeholder="Ex: João Silva" />
                       </div>
                       <div className="input-wrapper">
-                        <label className="input-label">E-mail Corporativo *</label>
-                        <input type="email" name="email" value={formUsuario.email} onChange={(e) => setFormUsuario({...formUsuario, email: e.target.value})} required className="input-field" placeholder="kaua.menezes@biscoite.com" style={{ width: '100%', boxSizing: 'border-box' }} />
+                        <label className="input-label">E-mail Corporativo</label>
+                        <input type="email" name="email" value={formUsuario.email} onChange={(e) => setFormUsuario({...formUsuario, email: e.target.value})} required className="input-field" placeholder="joao@biscoite.com" />
                       </div>
                     </div>
                     <div className="form-row">
                       <div className="input-wrapper">
-                        <label className="input-label">Login *</label>
-                        <input type="text" name="login" value={formUsuario.login} onChange={(e) => setFormUsuario({...formUsuario, login: e.target.value})} required className="input-field" placeholder="kaua.menezes" />
+                        <label className="input-label">Login</label>
+                        <input type="text" name="login" value={formUsuario.login} onChange={(e) => setFormUsuario({...formUsuario, login: e.target.value})} required className="input-field" placeholder="joao.silva" />
                       </div>
                       <div className="input-wrapper">
-                        <label className="input-label">Setor *</label>
+                        <label className="input-label">Setor</label>
                         <select name="setor" value={formUsuario.setor} onChange={(e) => setFormUsuario({...formUsuario, setor: e.target.value})} required className="input-field">
                           <option value="">Selecione...</option>
                           <option value="TI">TI</option>
@@ -687,31 +677,73 @@ function App() {
                     </div>
                     <div className="form-row">
                       <div className="input-wrapper">
-                        <label className="input-label">Senha *</label>
-                        <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                          <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} required className="input-field" placeholder="••••••••" style={{ width: '100%', paddingRight: '40px' }} />
-                          <button type="button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)} style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}>
-                            {mostrarSenhaForm ? '🙈' : '👁️'}
+                        <label className="input-label">Senha</label>
+                        <div className="password-container">
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} required className="input-field" placeholder="••••••••" />
+                          <button type="button" className="eye-button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)}>
+                            {mostrarSenhaForm ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                           </button>
                         </div>
                       </div>
                       <div className="input-wrapper">
-                        <label className="input-label">Confirme a Senha *</label>
-                        <div className="password-container" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                          <input type={mostrarSenhaForm ? "text" : "password"} name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={(e) => setFormUsuario({...formUsuario, confirmaSenha: e.target.value})} required className="input-field" placeholder="••••••••" style={{ width: '100%', paddingRight: '40px' }} />
+                        <label className="input-label">Confirmar Senha</label>
+                        <div className="password-container">
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={(e) => setFormUsuario({...formUsuario, confirmaSenha: e.target.value})} required className="input-field" placeholder="••••••••" />
                         </div>
                       </div>
                     </div>
-                    <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '20px' }}>
-                      {carregandoRegistro ? 'Salvando...' : 'Cadastrar na Equipe'}
+                    <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '10px' }}>
+                      {carregandoRegistro ? 'Salvando...' : 'Cadastrar Colaborador'}
                     </button>
                   </form>
                 </div>
               )}
             </div>
           )}
+
         </div>
       </div>
+
+      {/* === MODAL DE ALTERAÇÃO DE SENHA FLUTUANTE (DESIGN MODERNO) === */}
+      {usuarioModalSenha && (
+        <div className="modal-overlay" onClick={() => setUsuarioModalSenha(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px 0', color: 'var(--navy-main)', fontSize: '1.2rem' }}>Redefinir Senha</h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Alterando credenciais de acesso para <strong>{usuarioModalSenha.nome}</strong>.
+            </p>
+            
+            <form onSubmit={salvarSenhaModalSubmit} className="form-group">
+              <div className="input-wrapper">
+                <label className="input-label">Nova Senha</label>
+                <div className="password-container">
+                  <input 
+                    type={mostrarSenhaModal ? "text" : "password"} 
+                    value={novaSenhaModal} 
+                    onChange={(e) => setNovaSenhaModal(e.target.value)} 
+                    placeholder="Mínimo de caracteres" 
+                    className="input-field" 
+                    autoFocus 
+                    required 
+                  />
+                  <button type="button" className="eye-button" onClick={() => setMostrarSenhaModal(!mostrarSenhaModal)}>
+                    {mostrarSenhaModal ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setUsuarioModalSenha(null)} className="btn-secondary" style={{ flex: 1 }}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={carregandoModal} className="btn-primary" style={{ flex: 1, marginTop: 0 }}>
+                  {carregandoModal ? 'Salvando...' : 'Salvar Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }
