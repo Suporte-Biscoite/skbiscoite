@@ -10,12 +10,17 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
-  // ================= SISTEMA DE NOTIFICAÇÕES (TOAST) =================
+  // ================= SISTEMA DE NOTIFICAÇÕES (TOAST & DIALOG) =================
   const [toast, setToast] = useState(null); // { mensagem: '', tipo: 'sucesso' | 'erro' }
+  const [dialogoConfirmacao, setDialogoConfirmacao] = useState(null); // { titulo, mensagem, onConfirm }
 
   const exibirToast = (mensagem, tipo = 'sucesso') => {
     setToast({ mensagem, tipo });
-    setTimeout(() => setToast(null), 4000); // Some após 4 segundos
+    setTimeout(() => setToast(null), 4000); 
+  };
+
+  const confirmarAcao = (titulo, mensagem, acao) => {
+    setDialogoConfirmacao({ titulo, mensagem, onConfirm: acao });
   };
 
   // ================= ESTADOS DE USUÁRIOS E LOGIN =================
@@ -57,7 +62,7 @@ function App() {
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-  // ================= ÍCONES SVG MINIMALISTAS =================
+  // ================= ÍCONES SVG =================
   const IconeOlhoAberto = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
   );
@@ -65,7 +70,6 @@ function App() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
   );
 
-  // Helper para iniciais do Avatar
   const obterIniciais = (nomeStr) => {
     if (!nomeStr) return 'U';
     const partes = nomeStr.trim().split(' ');
@@ -98,7 +102,7 @@ function App() {
       
       if (error) throw error;
       
-      exibirToast(`Dados de ${usuarioEditando.nome} atualizados com sucesso!`, 'sucesso');
+      exibirToast(`Dados de ${usuarioEditando.nome} atualizados.`, 'sucesso');
       setUsuarioEditando(null);
       carregarUsuarios();
     } catch (err) {
@@ -108,16 +112,20 @@ function App() {
     }
   };
 
-  const gerarSenhaAleatoriaEditando = async () => {
-    const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
-    if (window.confirm(`Deseja gerar uma nova senha aleatória para ${usuarioEditando.nome} e enviar por e-mail?`)) {
-      try {
-        await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
-        exibirToast(`Nova senha enviada para ${usuarioEditando.email}.`, 'sucesso');
-      } catch (err) {
-        exibirToast('Erro ao gerar nova senha.', 'erro');
+  const solicitarNovaSenhaAleatoria = () => {
+    confirmarAcao(
+      'Gerar Nova Senha', 
+      `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}? Uma senha aleatória será gerada.`,
+      async () => {
+        const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+        try {
+          await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
+          exibirToast(`Simulação: Senha enviada para ${usuarioEditando.email}.`, 'sucesso');
+        } catch (err) {
+          exibirToast('Erro ao gerar nova senha.', 'erro');
+        }
       }
-    }
+    );
   };
 
   const registrarNovoUsuario = async (e) => {
@@ -141,9 +149,9 @@ function App() {
       }]);
       if (error) throw error;
 
-      setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
+      setSucessoFormUser(`Colaborador cadastrado com sucesso!`);
       setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '', ativo: true });
-      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 2000); 
+      setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 1500); 
     } catch (error) {
       setErroFormUser('Erro ao criar usuário: ' + error.message);
     } finally {
@@ -159,14 +167,14 @@ function App() {
     try {
       const { data: usuario } = await supabase.from('usuarios').select('id, nome, email').eq('email', emailRecuperacao).single();
       if (!usuario) {
-        setErroLogin('Este e-mail não foi encontrado no sistema.');
+        setErroLogin('E-mail não encontrado no sistema.');
         return;
       }
       const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
       setTelaLogin('login');
-      setSucessoLogin(`Nova senha gerada e enviada para o e-mail cadastrado.`);
+      setSucessoLogin(`Simulação: Senha enviada para o e-mail.`);
       setEmailRecuperacao('');
     } catch (err) {
       setErroLogin('Erro ao processar a recuperação.');
@@ -197,7 +205,7 @@ function App() {
         setErroLogin('Credenciais incorretas.');
       }
     } catch (err) {
-      setErroLogin('Erro de comunicação com o servidor. Verifique os dados.');
+      setErroLogin('Erro de comunicação. Verifique os dados.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -220,12 +228,16 @@ function App() {
     if (modo === 'historico') carregarHistorico();
   }, [modo]);
 
-  const limparHistorico = async () => {
-    if (window.confirm('Deseja apagar todo o histórico da nuvem?')) {
-      await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      carregarHistorico();
-      exibirToast('Histórico limpo com sucesso.');
-    }
+  const solicitarLimpezaHistorico = () => {
+    confirmarAcao(
+      'Limpar Histórico da Nuvem',
+      'Tem certeza que deseja apagar todos os registros de auditoria? Esta ação não pode ser desfeita.',
+      async () => {
+        await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        carregarHistorico();
+        exibirToast('Histórico apagado com sucesso.', 'sucesso');
+      }
+    );
   };
 
   const buscarTodosCodigosOmie = async () => {
@@ -280,9 +292,7 @@ function App() {
 
   const handleChangeInd = (e) => {
     let val = e.target.value.toUpperCase();
-    if (e.target.name === 'ncm') {
-      val = val.replace(/\D/g, ''); 
-    }
+    if (e.target.name === 'ncm') val = val.replace(/\D/g, ''); 
     setFormInd({ ...formInd, [e.target.name]: val });
   };
 
@@ -293,7 +303,7 @@ function App() {
     try {
       const descFormatada = formInd.descricao.trim();
       const todosCodigos = await buscarTodosCodigosOmie();
-      if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com o nome "${descFormatada}".`);
+      if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com este nome.`);
 
       const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
       await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
@@ -342,10 +352,7 @@ function App() {
   };
 
   const processarEmMassa = async () => {
-    if (dadosPlanilha.length === 0) {
-      exibirToast("Envie uma planilha válida.", "erro");
-      return;
-    }
+    if (dadosPlanilha.length === 0) return exibirToast("Envie uma planilha válida.", "erro");
     setProcMassa(true); setLogsMassa([]);
 
     try {
@@ -377,7 +384,7 @@ function App() {
   if (!usuarioLogado) {
     return (
       <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <div className="b-card" style={{ width: '100%', maxWidth: '420px', padding: '3rem' }}>
+        <div className="b-card" style={{ maxWidth: '420px', padding: '3rem' }}>
           <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
             <h2 className="brand-font" style={{ color: 'var(--brand-gold)', fontSize: '2.5rem' }}>Biscoitê</h2>
             <p style={{ color: 'var(--text-mocha)', marginTop: '0.5rem' }}>Acesso Corporativo</p>
@@ -395,18 +402,18 @@ function App() {
               <div className="b-input-group" style={{ position: 'relative' }}>
                 <label>Senha</label>
                 <input type={mostrarSenhaLogin ? "text" : "password"} name="password" autoComplete="current-password" className="b-input" placeholder="••••••••" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} required style={{ paddingRight: '40px' }} />
-                <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', top: '38px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
+                <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', top: '33px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
                   {mostrarSenhaLogin ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                 </button>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem', marginBottom: '2rem' }}>
                 <span onClick={() => { setTelaLogin('recuperar'); setErroLogin(''); setSucessoLogin(''); }} style={{ fontSize: '0.85rem', color: 'var(--brand-gold)', cursor: 'pointer', fontWeight: '500' }}>Esqueci minha senha</span>
               </div>
               <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center' }} disabled={carregandoLogin}>{carregandoLogin ? 'Autenticando...' : 'Acessar Sistema'}</button>
             </form>
           ) : (
             <form onSubmit={handleRecuperarSenha}>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem', textAlign: 'center' }}>Digite seu e-mail cadastrado para gerar uma nova senha provisória.</p>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem', textAlign: 'center' }}>Digite seu e-mail para gerar uma nova senha provisória.</p>
               <div className="b-input-group">
                 <label>E-mail Corporativo</label>
                 <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="b-input" required />
@@ -420,15 +427,28 @@ function App() {
     );
   }
 
-  // ================= RENDERIZAÇÃO DA BARRA LATERAL BASEADA EM ACESSO (RBAC) =================
+  // ================= RENDERIZAÇÃO DA BARRA LATERAL =================
   const ehTI = usuarioLogado?.setor?.toUpperCase() === 'TI';
 
   return (
     <div className="app-container">
-      {/* Toast Flutuante */}
       {toast && (
         <div className={`b-toast ${toast.tipo === 'sucesso' ? 'b-toast-sucesso' : 'b-toast-erro'}`}>
           {toast.tipo === 'sucesso' ? '✔️' : '⚠️'} {toast.mensagem}
+        </div>
+      )}
+
+      {/* DIALOG DE CONFIRMAÇÃO CUSTOMIZADO (SUBSTITUI O WINDOW.CONFIRM) */}
+      {dialogoConfirmacao && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="b-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '2rem' }}>
+            <h3 className="brand-font" style={{ marginBottom: '1rem', fontSize: '1.4rem' }}>{dialogoConfirmacao.titulo}</h3>
+            <p style={{ color: 'var(--text-mocha)', marginBottom: '2rem', fontSize: '0.95rem' }}>{dialogoConfirmacao.mensagem}</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+              <button className="b-btn-ghost" onClick={() => setDialogoConfirmacao(null)}>Cancelar</button>
+              <button className="b-btn" onClick={() => { dialogoConfirmacao.onConfirm(); setDialogoConfirmacao(null); }}>Confirmar Ação</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -447,13 +467,11 @@ function App() {
             Importação em Massa
           </button>
 
-          {/* TRAVA DE ACESSO: SÓ APARECE SE FOR TI */}
           {ehTI && (
             <>
               <button onClick={() => setModo('usuarios')} style={{ background: modo === 'usuarios' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'usuarios' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'usuarios' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Gestão de Equipe
               </button>
-              
               <button onClick={() => setModo('historico')} style={{ background: modo === 'historico' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'historico' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'historico' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Histórico & Auditoria
               </button>
@@ -486,9 +504,7 @@ function App() {
               <div className="user-name">{usuarioLogado.nome}</div>
               <div className="user-role">{usuarioLogado.setor}</div>
             </div>
-            <div className="user-avatar">
-              {obterIniciais(usuarioLogado.nome)}
-            </div>
+            <div className="user-avatar">{obterIniciais(usuarioLogado.nome)}</div>
           </div>
         </header>
 
@@ -522,13 +538,13 @@ function App() {
                 </div>
               </div>
               <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="submit" disabled={procInd} className="b-btn">{procInd ? 'Processando...' : 'Gerar e Sincronizar Código'}</button>
+                <button type="submit" disabled={procInd} className="b-btn">{procInd ? 'Processando...' : 'Gerar e Sincronizar'}</button>
               </div>
             </form>
 
             {skuGerado && (
               <div style={{ marginTop: '2rem', padding: '2rem', background: 'var(--bg-vanilla)', border: '1px dashed var(--brand-gold)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', fontWeight: 600 }}>CÓDIGO GERADO E SINCRONIZADO COM SUCESSO</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', fontWeight: 600 }}>CÓDIGO GERADO COM SUCESSO</span>
                 <h1 style={{ color: 'var(--brand-gold)', fontSize: '2.5rem', marginTop: '0.5rem' }}>{skuGerado}</h1>
               </div>
             )}
@@ -539,15 +555,11 @@ function App() {
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Importação via Excel</h3>
-              <button onClick={baixarPlanilhaModelo} className="b-btn-ghost">
-                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                Baixar Planilha Modelo
-              </button>
+              <button onClick={baixarPlanilhaModelo} className="b-btn-ghost">Baixar Planilha Modelo</button>
             </div>
             
             <div style={{ border: '2px dashed var(--border-cream)', padding: '3rem', textAlign: 'center', borderRadius: 'var(--radius-md)', marginBottom: '2rem', background: 'var(--bg-vanilla)' }}>
-              <svg width="40" height="40" fill="none" stroke="var(--brand-gold)" strokeWidth="2" viewBox="0 0 24 24" style={{ marginBottom: '1rem' }}><path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-              <p style={{ fontWeight: '500', marginBottom: '1rem', color: 'var(--text-espresso)' }}>Anexe sua planilha .xlsx preenchida aqui</p>
+              <p style={{ fontWeight: '500', marginBottom: '1rem' }}>Anexe sua planilha .xlsx preenchida aqui</p>
               <label className="b-btn" style={{ cursor: 'pointer' }}>Selecionar Arquivo<input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={lerArquivoUpload} /></label>
             </div>
 
@@ -579,10 +591,7 @@ function App() {
               {abaGestao === 'lista' ? (
                 <button className="b-btn" onClick={() => setAbaGestao('criar')}>+ Adicionar Usuário</button>
               ) : (
-                <button className="b-btn-ghost" onClick={() => setAbaGestao('lista')}>
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                  Voltar para Tabela
-                </button>
+                <button className="b-btn-ghost" onClick={() => setAbaGestao('lista')}>Voltar para Tabela</button>
               )}
             </div>
 
@@ -643,7 +652,7 @@ function App() {
                   <div className="b-input-group" style={{ position: 'relative' }}>
                     <label>Senha</label>
                     <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} className="b-input" required />
-                    <button type="button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)} style={{ position: 'absolute', right: '12px', top: '38px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>{mostrarSenhaForm ? <IconeOlhoFechado /> : <IconeOlhoAberto />}</button>
+                    <button type="button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)} style={{ position: 'absolute', right: '12px', top: '33px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>{mostrarSenhaForm ? <IconeOlhoFechado /> : <IconeOlhoAberto />}</button>
                   </div>
                   <div className="b-input-group" style={{ position: 'relative' }}>
                     <label>Confirmar Senha</label>
@@ -662,7 +671,7 @@ function App() {
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
-              <button onClick={limparHistorico} className="b-btn-ghost" style={{ color: 'var(--danger-terracotta)' }}>Limpar Histórico</button>
+              <button onClick={solicitarLimpezaHistorico} className="b-btn-ghost" style={{ color: 'var(--danger-terracotta)' }}>Limpar Histórico</button>
             </div>
             
             <div className="b-table-wrapper">
@@ -693,10 +702,10 @@ function App() {
         )}
       </main>
 
-      {/* ================= MODAL DE EDIÇÃO COMPLETA DE USUÁRIO ================= */}
+      {/* ================= MODAL DE EDIÇÃO DE USUÁRIO ================= */}
       {usuarioEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="b-card" style={{ width: '500px', boxShadow: 'var(--shadow-float)' }}>
+          <div className="b-card" style={{ maxWidth: '540px', boxShadow: 'var(--shadow-float)' }}>
             <h3 className="brand-font" style={{ marginBottom: '0.5rem' }}>Perfil do Colaborador</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-mocha)', marginBottom: '1.5rem' }}>Edite os dados, bloqueie o acesso ou redefina a senha de <strong>{usuarioEditando.nome}</strong>.</p>
             
@@ -732,9 +741,9 @@ function App() {
                 </div>
               </div>
 
-              <div style={{ padding: '1rem', background: 'var(--bg-vanilla)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cream)', marginBottom: '1.5rem', textAlign: 'center' }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', marginBottom: '0.5rem' }}>Precisa redefinir o acesso deste usuário?</p>
-                <button type="button" onClick={gerarSenhaAleatoriaEditando} className="b-btn-ghost" style={{ color: 'var(--brand-gold)' }}>
+              <div style={{ padding: '1.5rem', background: 'var(--bg-vanilla)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cream)', marginBottom: '1.5rem', textAlign: 'center' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', marginBottom: '0.8rem' }}>Precisa redefinir o acesso deste usuário?</p>
+                <button type="button" onClick={solicitarNovaSenhaAleatoria} className="b-btn-ghost" style={{ color: 'var(--brand-gold)' }}>
                   🔑 Gerar Senha Aleatória e Enviar por E-mail
                 </button>
               </div>
