@@ -4,29 +4,30 @@ import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import './App.css';
 
-// Cole isso no topo do arquivo, de preferência fora do componente
+// ================= CONEXÃO SUPABASE =================
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ================= GERADOR DE SENHA FORTE =================
 function gerarSenhaForte(tamanho = 12) {
   const letrasMaiusculas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const letrasMinusculas = 'abcdefghijklmnopqrstuvwxyz';
   const numeros = '0123456789';
   const simbolos = '!@#$%&*?';
   const todosCaracteres = letrasMaiusculas + letrasMinusculas + numeros + simbolos;
+  
   let senha = '';
   senha += letrasMaiusculas[Math.floor(Math.random() * letrasMaiusculas.length)];
   senha += letrasMinusculas[Math.floor(Math.random() * letrasMinusculas.length)];
   senha += numeros[Math.floor(Math.random() * numeros.length)];
   senha += simbolos[Math.floor(Math.random() * simbolos.length)];
+  
   for (let i = 4; i < tamanho; i++) {
     senha += todosCaracteres[Math.floor(Math.random() * todosCaracteres.length)];
   }
   return senha.split('').sort(() => 0.5 - Math.random()).join('');
 }
-
-
-// ================= CONEXÃO SUPABASE =================
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
   // ================= SISTEMA DE NOTIFICAÇÕES (TOAST & DIALOG) =================
@@ -52,8 +53,19 @@ function App() {
   const [telaLogin, setTelaLogin] = useState('login'); 
   const [emailRecuperacao, setEmailRecuperacao] = useState('');
   
+  // Rate Limiting para a recuperação de senha
+  const [cooldownRecuperacao, setCooldownRecuperacao] = useState(0);
+  
   const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
   const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
+
+  // Efeito do Cooldown
+  useEffect(() => {
+    if (cooldownRecuperacao > 0) {
+      const timerId = setTimeout(() => setCooldownRecuperacao(cooldownRecuperacao - 1), 1000);
+      return () => clearTimeout(timerId);
+    }
+  }, [cooldownRecuperacao]);
 
   // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
   const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
@@ -80,18 +92,6 @@ function App() {
 
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
-
-  //================= GERADOR DE SENHA =================
-
-  const [senhaFallback, setSenhaFallback] = useState('');
-  const [cooldown, setCooldown] = useState(0);
-
-  useEffect(() => {
-    if (cooldown > 0) {
-      const timerId = setTimeout(() => setCooldown(cooldown - 1), 1000);
-      return () => clearTimeout(timerId);
-    }
-  }, [cooldown]);
 
   // ================= ÍCONES SVG =================
   const IconeOlhoAberto = () => (
@@ -143,14 +143,15 @@ function App() {
     }
   };
 
-  // === CHAMADA DA NOVA API DE E-MAIL (MODAL) COM FALLBACK ===
+  // === CHAMADA DA NOVA API DE E-MAIL (MODAL ADMIN TI) ===
   const solicitarNovaSenhaAleatoria = () => {
     confirmarAcao(
       'Gerar Nova Senha', 
       `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}?`,
       async () => {
         setCarregandoModal(true);
-        const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+        // ATUALIZADO: Gerador Seguro substituindo o 'Biscoite + Numero'
+        const novaSenha = gerarSenhaForte(); 
         try {
           // 1. Atualiza no Supabase
           await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
@@ -225,7 +226,8 @@ function App() {
         return;
       }
       
-      const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+      // ATUALIZADO: Gerador Seguro substituindo o 'Biscoite + Numero'
+      const novaSenha = gerarSenhaForte();
       
       // 1. Atualiza no Supabase
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
@@ -242,6 +244,7 @@ function App() {
 
         setTelaLogin('login');
         setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
+        setCooldownRecuperacao(60); // Inicia a trava de segurança contra spam
       } catch (emailErr) {
         console.error("Falha no e-mail:", emailErr);
         // FALLBACK: Mostra a senha na tela se o e-mail falhar
@@ -492,7 +495,23 @@ function App() {
                 <label>E-mail Corporativo</label>
                 <input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="nome@biscoite.com.br" className="b-input" required />
               </div>
-              <button type="submit" className="b-btn" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }} disabled={carregandoLogin}>{carregandoLogin ? 'Processando...' : 'Gerar Nova Senha'}</button>
+              
+              {/* ATUALIZADO: Botão com trava de segurança Anti-Spam */}
+              <button 
+                type="submit" 
+                className="b-btn" 
+                style={{ 
+                  width: '100%', 
+                  justifyContent: 'center', 
+                  marginTop: '1rem',
+                  backgroundColor: cooldownRecuperacao > 0 ? '#6D5C53' : '',
+                  cursor: (carregandoLogin || cooldownRecuperacao > 0) ? 'not-allowed' : 'pointer'
+                }} 
+                disabled={carregandoLogin || cooldownRecuperacao > 0}
+              >
+                {carregandoLogin ? 'Processando...' : cooldownRecuperacao > 0 ? `Aguarde ${cooldownRecuperacao}s` : 'Gerar Nova Senha'}
+              </button>
+              
               <button type="button" onClick={() => { setTelaLogin('login'); setErroLogin(''); }} className="b-btn-ghost" style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}>Voltar ao Login</button>
             </form>
           )}
