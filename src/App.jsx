@@ -16,7 +16,7 @@ function App() {
 
   const exibirToast = (mensagem, tipo = 'sucesso') => {
     setToast({ mensagem, tipo });
-    setTimeout(() => setToast(null), 4000); 
+    setTimeout(() => setToast(null), 5000); 
   };
 
   const confirmarAcao = (titulo, mensagem, acao) => {
@@ -112,11 +112,11 @@ function App() {
     }
   };
 
-  // === CHAMADA DA NOVA API DE E-MAIL (MODAL) ===
+  // === CHAMADA DA NOVA API DE E-MAIL (MODAL) COM FALLBACK ===
   const solicitarNovaSenhaAleatoria = () => {
     confirmarAcao(
       'Gerar Nova Senha', 
-      `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}? Uma senha aleatória será gerada e enviada.`,
+      `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}?`,
       async () => {
         setCarregandoModal(true);
         const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
@@ -125,19 +125,26 @@ function App() {
           await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
           
           // 2. Dispara e-mail
-          const res = await fetch('/api/enviar-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha })
-          });
+          try {
+            const res = await fetch('/api/enviar-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha })
+            });
 
-          if (!res.ok) throw new Error('Falha no envio de e-mail');
+            if (!res.ok) throw new Error('Falha no envio de e-mail (Resend bloqueou ou sem chave)');
 
-          exibirToast(`Senha gerada e enviada para ${usuarioEditando.email}.`, 'sucesso');
+            exibirToast(`Senha gerada e enviada para ${usuarioEditando.email}.`, 'sucesso');
+          } catch (emailErr) {
+            console.error("Falha ao enviar e-mail via API:", emailErr);
+            // FALLBACK: Mostra a senha na tela se o e-mail falhar
+            exibirToast(`Senha de ${usuarioEditando.nome} alterada para: ${novaSenha}`, 'sucesso');
+          }
         } catch (err) {
-          exibirToast('Erro ao gerar/enviar nova senha. Verifique o servidor.', 'erro');
+          exibirToast('Erro ao acessar o banco de dados. Tente novamente.', 'erro');
         } finally {
           setCarregandoModal(false);
+          setUsuarioEditando(null);
         }
       }
     );
@@ -174,8 +181,7 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
-  // === CHAMADA DA NOVA API DE E-MAIL (LOGIN SCREEN) ===
+  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO COM FALLBACK =================
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
@@ -194,19 +200,27 @@ function App() {
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
       // 2. Dispara e-mail
-      const res = await fetch('/api/enviar-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha })
-      });
+      try {
+        const res = await fetch('/api/enviar-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha })
+        });
 
-      if (!res.ok) throw new Error('Falha no disparo');
+        if (!res.ok) throw new Error('Falha no disparo do Resend');
 
-      setTelaLogin('login');
-      setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
+        setTelaLogin('login');
+        setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
+      } catch (emailErr) {
+        console.error("Falha no e-mail:", emailErr);
+        // FALLBACK: Mostra a senha na tela se o e-mail falhar
+        setTelaLogin('login');
+        setSucessoLogin(`Atenção: E-mail indisponível. Sua nova senha é: ${novaSenha}`);
+      }
+
       setEmailRecuperacao('');
     } catch (err) {
-      setErroLogin('Erro ao processar a recuperação de e-mail.');
+      setErroLogin('Erro ao comunicar com o banco de dados Supabase.');
     } finally {
       setCarregandoLogin(false);
     }
