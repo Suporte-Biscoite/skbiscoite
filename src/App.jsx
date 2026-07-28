@@ -14,21 +14,29 @@ function App() {
   const [usuarioLogado, setUsuarioLogado] = useState(null); 
   const [credenciais, setCredenciais] = useState({ email: '', senha: '' });
   const [erroLogin, setErroLogin] = useState('');
-  const [sucessoLogin, setSucessoLogin] = useState(''); // Usado para mensagens de sucesso na tela de login
+  const [sucessoLogin, setSucessoLogin] = useState(''); 
   const [carregandoLogin, setCarregandoLogin] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
 
-  // Estados para o fluxo "Esqueceu a Senha"
-  const [telaLogin, setTelaLogin] = useState('login'); // 'login' | 'recuperar'
+  const [telaLogin, setTelaLogin] = useState('login'); 
   const [emailRecuperacao, setEmailRecuperacao] = useState('');
+  
+  // Controle do "Olhinho"
+  const [mostrarSenhaLogin, setMostrarSenhaLogin] = useState(false);
+  const [mostrarSenhaForm, setMostrarSenhaForm] = useState(false);
 
-  // Estados do formulário de criação
+  // ================= ESTADOS DO DASHBOARD DE USUÁRIOS =================
+  const [usuariosCadastrados, setUsuariosCadastrados] = useState([]);
+  const [abaGestao, setAbaGestao] = useState('lista'); // 'lista' | 'criar'
+  const [idEditandoSenha, setIdEditandoSenha] = useState(null);
+  const [novaSenhaEditada, setNovaSenhaEditada] = useState('');
+
   const [formUsuario, setFormUsuario] = useState({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
   const [erroFormUser, setErroFormUser] = useState('');
   const [sucessoFormUser, setSucessoFormUser] = useState('');
   const [carregandoRegistro, setCarregandoRegistro] = useState(false);
 
-  // ================= ESTADOS CORE =================
+  // ================= ESTADOS CORE DO OMIE =================
   const [modo, setModo] = useState('individual'); 
   const [formInd, setFormInd] = useState({ categoria: '', descricao: '', ncm: '' });
   const [procInd, setProcInd] = useState(false);
@@ -42,12 +50,41 @@ function App() {
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-  // ================= LÓGICA DE RECUPERAÇÃO DE SENHA =================
-  const gerarSenhaAleatoria = () => {
-    // Gera uma senha no padrão Biscoite + 4 números aleatórios (Ex: Biscoite4829)
-    const numeroAleatorio = Math.floor(1000 + Math.random() * 9000);
-    return `Biscoite${numeroAleatorio}`;
+  // ================= LÓGICA DE USUÁRIOS (DASHBOARD) =================
+  const carregarUsuarios = async () => {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .order('nome', { ascending: true });
+    if (data) setUsuariosCadastrados(data);
   };
+
+  useEffect(() => {
+    if (modo === 'usuarios' && abaGestao === 'lista') {
+      carregarUsuarios();
+    }
+  }, [modo, abaGestao]);
+
+  const salvarNovaSenha = async (idUsuario) => {
+    if (novaSenhaEditada.trim() === '') return alert('A senha não pode ser vazia.');
+    try {
+      const { error } = await supabase
+        .from('usuarios')
+        .update({ senha: novaSenhaEditada })
+        .eq('id', idUsuario);
+      
+      if (error) throw error;
+      alert('Senha atualizada com sucesso!');
+      setIdEditandoSenha(null);
+      setNovaSenhaEditada('');
+      carregarUsuarios();
+    } catch (err) {
+      alert('Erro ao atualizar senha.');
+    }
+  };
+
+  // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
+  const gerarSenhaAleatoria = () => `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
 
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
@@ -56,7 +93,6 @@ function App() {
     setSucessoLogin('');
 
     try {
-      // 1. Verifica se o e-mail existe no banco
       const { data: usuario, error: erroBusca } = await supabase
         .from('usuarios')
         .select('id, nome, email')
@@ -69,7 +105,6 @@ function App() {
         return;
       }
 
-      // 2. Gera a nova senha e atualiza no Supabase
       const novaSenha = gerarSenhaAleatoria();
       const { error: erroUpdate } = await supabase
         .from('usuarios')
@@ -78,10 +113,8 @@ function App() {
 
       if (erroUpdate) throw erroUpdate;
 
-      // 3. Simulação do envio de E-mail (Para você não ficar trancado agora)
-      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\n\nSua senha foi redefinida com sucesso.\nSua nova senha de acesso é: ${novaSenha}\n\n(No futuro, isto chegará na caixa de entrada real)`);
+      alert(`[SIMULAÇÃO DE E-MAIL]\n\nPara: ${usuario.nome} (${usuario.email})\n\nSua senha foi redefinida com sucesso.\nSua nova senha de acesso é: ${novaSenha}`);
 
-      // 4. Volta para a tela de login com sucesso
       setTelaLogin('login');
       setSucessoLogin('Sua nova senha foi gerada. Verifique seu e-mail (ou o alerta na tela).');
       setEmailRecuperacao('');
@@ -93,13 +126,12 @@ function App() {
     }
   };
 
- // ================= LÓGICA DE LOGIN ==================
   const handleLogin = async (e) => {
     e.preventDefault();
     
-    // ACESSO MESTRE DE EMERGÊNCIA (O retorno do Jedi)
+    // ACESSO MESTRE DE EMERGÊNCIA
     if (credenciais.email === 'ti' && credenciais.senha === 'ti123') {
-      setUsuarioLogado({ nome: 'Mestre TI', email: 'ti@biscoite.com.br' });
+      setUsuarioLogado({ nome: 'Mestre TI', email: 'ti@biscoite.com.br', setor: 'TI' });
       setErroLogin('');
       setCredenciais({ email: '', senha: '' });
       return;
@@ -124,7 +156,7 @@ function App() {
         setErroLogin('Login, E-mail ou Senha incorretos.');
       }
     } catch (err) {
-      setErroLogin('Erro de comunicação com o servidor. Verifique se as tabelas foram criadas.');
+      setErroLogin('Erro de comunicação com o servidor. Verifique a conexão.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -136,8 +168,6 @@ function App() {
     setModo('individual');
     setTelaLogin('login');
   };
-
-  const handleChangeUsuario = (e) => setFormUsuario({ ...formUsuario, [e.target.name]: e.target.value });
 
   const registrarNovoUsuario = async (e) => {
     e.preventDefault();
@@ -171,6 +201,10 @@ function App() {
 
       setSucessoFormUser(`Usuário ${formUsuario.nome} criado com sucesso!`);
       setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '' });
+      setTimeout(() => { 
+        setAbaGestao('lista'); 
+        setSucessoFormUser(''); 
+      }, 2000); // Volta pra lista após 2s
     } catch (error) {
       setErroFormUser('Erro ao criar usuário: ' + error.message);
     } finally {
@@ -205,7 +239,7 @@ function App() {
   }, [modo]);
 
   const limparHistorico = async () => {
-    if (window.confirm('Tem a certeza que deseja APAGAR TODO o histórico da nuvem para toda a equipa?')) {
+    if (window.confirm('Tem a certeza que deseja APAGAR TODO o histórico da nuvem para toda a equipe?')) {
       await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       carregarHistorico();
     }
@@ -354,9 +388,7 @@ function App() {
       <div className="app-container">
         <div className="main-card" style={{ maxWidth: '420px', margin: '0 auto', padding: '50px 40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '35px' }}>
-            <h2 className="header-title" style={{ marginBottom: '8px' }}>
-              {telaLogin === 'login' ? 'Acesso Restrito' : 'Recuperar Senha'}
-            </h2>
+            <h2 className="header-title" style={{ marginBottom: '8px' }}>Acesso Restrito</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', margin: 0, fontWeight: '500' }}>
               Gerador de SKUs - Biscoitê
             </p>
@@ -378,7 +410,12 @@ function App() {
                     Esqueceu a senha?
                   </button>
                 </div>
-                <input type="password" name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
+                <div className="password-container">
+                  <input type={mostrarSenhaLogin ? "text" : "password"} name="senha" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} placeholder="••••••••" className="input-field" required />
+                  <button type="button" className="eye-button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)}>
+                    {mostrarSenhaLogin ? '🙈' : '👁️'}
+                  </button>
+                </div>
               </div>
               <button type="submit" disabled={carregandoLogin} className="btn-primary" style={{ marginTop: '16px' }}>
                 {carregandoLogin ? 'Autenticando...' : 'Entrar no Sistema'}
@@ -417,9 +454,8 @@ function App() {
             <div className="dropdown-menu" style={{ zIndex: 999 }}>
               <div className="dropdown-header">{usuarioLogado.nome}</div>
               
-              {/* Opcional: Só liberar a tela de criar usuário se for do TI, mas deixei liberado para todos por enquanto */}
-              <button className="dropdown-item" onClick={() => { setModo('usuarios'); setMenuAberto(false); }}>
-                👥 Criar Novo Usuário
+              <button className="dropdown-item" onClick={() => { setModo('usuarios'); setAbaGestao('lista'); setMenuAberto(false); }}>
+                👥 Gestão de Equipe
               </button>
               <button className="dropdown-item" onClick={() => { setModo('historico'); setMenuAberto(false); }}>
                 📄 Ver Histórico
@@ -443,15 +479,14 @@ function App() {
                 <button className={`tab-btn ${modo === 'massa' ? 'active' : ''}`} onClick={() => setModo('massa')}>Em Massa (Planilha)</button>
               </div>
             </header>
-          ) : (
+          ) : modo === 'historico' ? (
             <header style={{ marginBottom: '40px' }}>
               <button className="btn-back" onClick={() => setModo('individual')}>⬅ Voltar para o Gerador</button>
-              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>
-                {modo === 'historico' ? 'Histórico da Nuvem' : 'Gestão de Usuários'}
-              </h2>
+              <h2 className="header-title" style={{ textAlign: 'left', margin: 0 }}>Histórico da Nuvem</h2>
             </header>
-          )}
+          ) : null}
 
+          {/* === MODO INDIVIDUAL === */}
           {modo === 'individual' && (
             <div className="tab-content">
               {erroInd && <div className="alert-error">⚠️ {erroInd}</div>}
@@ -485,6 +520,7 @@ function App() {
             </div>
           )}
 
+          {/* === MODO MASSA === */}
           {modo === 'massa' && (
             <div className="tab-content">
               <div className="step-container">
@@ -521,12 +557,13 @@ function App() {
             </div>
           )}
 
+          {/* === MODO HISTÓRICO === */}
           {modo === 'historico' && (
             <div className="tab-content">
               <div className="step-container" style={{ marginBottom: '24px' }}>
                 <div className="step-text">
                   <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: 'var(--navy-main)' }}>Registos Corporativos</p>
-                  <small style={{ color: 'var(--text-muted)' }}>Exibindo os SKUs gerados por toda a equipa (sincronizado via Supabase).</small>
+                  <small style={{ color: 'var(--text-muted)' }}>Exibindo os SKUs gerados por toda a equipe (sincronizado via Supabase).</small>
                 </div>
                 <button onClick={limparHistorico} className="btn-secondary" style={{ flexShrink: 0, color: '#EF4444', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}>Limpar Registo</button>
               </div>
@@ -561,52 +598,118 @@ function App() {
             </div>
           )}
 
+          {/* === MODO GESTÃO DE USUÁRIOS (DASHBOARD) === */}
           {modo === 'usuarios' && (
             <div className="tab-content">
-              {erroFormUser && <div className="alert-error">⚠️ {erroFormUser}</div>}
-              {sucessoFormUser && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoFormUser}</div>}
+              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+                <div>
+                  <button className="btn-back" onClick={() => setModo('individual')} style={{ padding: 0, marginBottom: '10px' }}>⬅ Voltar para SKUs</button>
+                  <h2 className="header-title" style={{ margin: 0 }}>Gestão de Pessoas</h2>
+                </div>
+                {abaGestao === 'lista' ? (
+                  <button className="btn-primary" style={{ width: 'auto', padding: '10px 20px' }} onClick={() => setAbaGestao('criar')}>+ Novo Usuário</button>
+                ) : (
+                  <button className="btn-secondary" style={{ width: 'auto', padding: '10px 20px' }} onClick={() => setAbaGestao('lista')}>Ver Tabela</button>
+                )}
+              </header>
 
-              <form onSubmit={registrarNovoUsuario} className="form-group">
-                <div className="form-row">
-                  <div className="input-wrapper">
-                    <label className="input-label">Nome *</label>
-                    <input type="text" name="nome" value={formUsuario.nome} onChange={handleChangeUsuario} required className="input-field" placeholder="Nome completo" />
-                  </div>
-                  <div className="input-wrapper">
-                    <label className="input-label">Login *</label>
-                    <input type="text" name="login" value={formUsuario.login} onChange={handleChangeUsuario} required className="input-field" placeholder="Ex: kaua.menezes" />
-                  </div>
+              {abaGestao === 'lista' ? (
+                <div className="table-container">
+                  <table className="aesthetic-table">
+                    <thead>
+                      <tr>
+                        <th>Colaborador</th>
+                        <th>Setor</th>
+                        <th>Login / E-mail</th>
+                        <th>Segurança</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usuariosCadastrados.map((user) => (
+                        <tr key={user.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>👤</div>
+                              <span style={{ fontWeight: '600' }}>{user.nome}</span>
+                            </div>
+                          </td>
+                          <td><span className="badge-setor">{user.setor}</span></td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: '500' }}>{user.login}</span>
+                              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{user.email}</span>
+                            </div>
+                          </td>
+                          <td>
+                            {idEditandoSenha === user.id ? (
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <input type="text" placeholder="Nova senha" value={novaSenhaEditada} onChange={(e) => setNovaSenhaEditada(e.target.value)} style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem' }} />
+                                <button onClick={() => salvarNovaSenha(user.id)} style={{ background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 'bold' }}>Salvar</button>
+                                <button onClick={() => { setIdEditandoSenha(null); setNovaSenhaEditada(''); }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer' }}>Cancelar</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setIdEditandoSenha(user.id)} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '6px 12px', color: '#64748b', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600' }}>✏️ Redefinir Senha</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="form-row">
-                  <div className="input-wrapper">
-                    <label className="input-label">Senha *</label>
-                    <input type="password" name="senha" value={formUsuario.senha} onChange={handleChangeUsuario} required className="input-field" placeholder="••••••••" />
-                  </div>
-                  <div className="input-wrapper">
-                    <label className="input-label">Confirme a senha *</label>
-                    <input type="password" name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={handleChangeUsuario} required className="input-field" placeholder="••••••••" />
-                  </div>
+              ) : (
+                <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', padding: '30px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  {erroFormUser && <div className="alert-error">⚠️ {erroFormUser}</div>}
+                  {sucessoFormUser && <div className="alert-success" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', padding: '16px', borderRadius: '10px', marginBottom: '24px', fontWeight: '600', fontSize: '0.9rem', textAlign: 'center' }}>✅ {sucessoFormUser}</div>}
+                  <form onSubmit={registrarNovoUsuario} className="form-group">
+                    <div className="form-row">
+                      <div className="input-wrapper">
+                        <label className="input-label">Nome Completo *</label>
+                        <input type="text" name="nome" value={formUsuario.nome} onChange={(e) => setFormUsuario({...formUsuario, nome: e.target.value})} required className="input-field" placeholder="Ex: Kauã Menezes" />
+                      </div>
+                      <div className="input-wrapper">
+                        <label className="input-label">E-mail Corporativo *</label>
+                        <input type="email" name="email" value={formUsuario.email} onChange={(e) => setFormUsuario({...formUsuario, email: e.target.value})} required className="input-field" placeholder="kaua.menezes@biscoite.com" />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="input-wrapper">
+                        <label className="input-label">Login *</label>
+                        <input type="text" name="login" value={formUsuario.login} onChange={(e) => setFormUsuario({...formUsuario, login: e.target.value})} required className="input-field" placeholder="kaua.menezes" />
+                      </div>
+                      <div className="input-wrapper">
+                        <label className="input-label">Setor *</label>
+                        <select name="setor" value={formUsuario.setor} onChange={(e) => setFormUsuario({...formUsuario, setor: e.target.value})} required className="input-field">
+                          <option value="">Selecione...</option>
+                          <option value="TI">TI</option>
+                          <option value="Fabrica">Fábrica</option>
+                          <option value="Produtos">Produtos</option>
+                          <option value="Comercial">Comercial</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="input-wrapper">
+                        <label className="input-label">Senha *</label>
+                        <div className="password-container">
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="senha" value={formUsuario.senha} onChange={(e) => setFormUsuario({...formUsuario, senha: e.target.value})} required className="input-field" placeholder="••••••••" />
+                          <button type="button" className="eye-button" onClick={() => setMostrarSenhaForm(!mostrarSenhaForm)}>
+                            {mostrarSenhaForm ? '🙈' : '👁️'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="input-wrapper">
+                        <label className="input-label">Confirme a Senha *</label>
+                        <div className="password-container">
+                          <input type={mostrarSenhaForm ? "text" : "password"} name="confirmaSenha" value={formUsuario.confirmaSenha} onChange={(e) => setFormUsuario({...formUsuario, confirmaSenha: e.target.value})} required className="input-field" placeholder="••••••••" />
+                        </div>
+                      </div>
+                    </div>
+                    <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '20px' }}>
+                      {carregandoRegistro ? 'Salvando...' : 'Cadastrar na Equipe'}
+                    </button>
+                  </form>
                 </div>
-                <div className="form-row">
-                  <div className="input-wrapper">
-                    <label className="input-label">E-mail *</label>
-                    <input type="email" name="email" value={formUsuario.email} onChange={handleChangeUsuario} required className="input-field" placeholder="nome@biscoite.com.br" />
-                  </div>
-                  <div className="input-wrapper">
-                    <label className="input-label">Setor *</label>
-                    <select name="setor" value={formUsuario.setor} onChange={handleChangeUsuario} required className="input-field">
-                      <option value="">Selecione...</option>
-                      <option value="TI">TI</option>
-                      <option value="Fabrica">Fábrica</option>
-                      <option value="Produtos">Produtos</option>
-                      <option value="Comercial">Comercial</option>
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" disabled={carregandoRegistro} className="btn-primary" style={{ marginTop: '20px' }}>
-                  {carregandoRegistro ? 'A Registar...' : 'Registrar Usuário'}
-                </button>
-              </form>
+              )}
             </div>
           )}
         </div>
