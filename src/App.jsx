@@ -11,8 +11,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 function App() {
   // ================= SISTEMA DE NOTIFICAÇÕES (TOAST & DIALOG) =================
-  const [toast, setToast] = useState(null); // { mensagem: '', tipo: 'sucesso' | 'erro' }
-  const [dialogoConfirmacao, setDialogoConfirmacao] = useState(null); // { titulo, mensagem, onConfirm }
+  const [toast, setToast] = useState(null);
+  const [dialogoConfirmacao, setDialogoConfirmacao] = useState(null); 
 
   const exibirToast = (mensagem, tipo = 'sucesso') => {
     setToast({ mensagem, tipo });
@@ -112,17 +112,32 @@ function App() {
     }
   };
 
+  // === CHAMADA DA NOVA API DE E-MAIL (MODAL) ===
   const solicitarNovaSenhaAleatoria = () => {
     confirmarAcao(
       'Gerar Nova Senha', 
-      `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}? Uma senha aleatória será gerada.`,
+      `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}? Uma senha aleatória será gerada e enviada.`,
       async () => {
+        setCarregandoModal(true);
         const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
         try {
+          // 1. Atualiza no Supabase
           await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
-          exibirToast(`Simulação: Senha enviada para ${usuarioEditando.email}.`, 'sucesso');
+          
+          // 2. Dispara e-mail
+          const res = await fetch('/api/enviar-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha })
+          });
+
+          if (!res.ok) throw new Error('Falha no envio de e-mail');
+
+          exibirToast(`Senha gerada e enviada para ${usuarioEditando.email}.`, 'sucesso');
         } catch (err) {
-          exibirToast('Erro ao gerar nova senha.', 'erro');
+          exibirToast('Erro ao gerar/enviar nova senha. Verifique o servidor.', 'erro');
+        } finally {
+          setCarregandoModal(false);
         }
       }
     );
@@ -160,6 +175,7 @@ function App() {
   };
 
   // ================= LÓGICA DE LOGIN & RECUPERAÇÃO =================
+  // === CHAMADA DA NOVA API DE E-MAIL (LOGIN SCREEN) ===
   const handleRecuperarSenha = async (e) => {
     e.preventDefault();
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
@@ -168,16 +184,29 @@ function App() {
       const { data: usuario } = await supabase.from('usuarios').select('id, nome, email').eq('email', emailRecuperacao).single();
       if (!usuario) {
         setErroLogin('E-mail não encontrado no sistema.');
+        setCarregandoLogin(false);
         return;
       }
+      
       const novaSenha = `Biscoite${Math.floor(1000 + Math.random() * 9000)}`;
+      
+      // 1. Atualiza no Supabase
       await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
 
+      // 2. Dispara e-mail
+      const res = await fetch('/api/enviar-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha })
+      });
+
+      if (!res.ok) throw new Error('Falha no disparo');
+
       setTelaLogin('login');
-      setSucessoLogin(`Simulação: Senha enviada para o e-mail.`);
+      setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
       setEmailRecuperacao('');
     } catch (err) {
-      setErroLogin('Erro ao processar a recuperação.');
+      setErroLogin('Erro ao processar a recuperação de e-mail.');
     } finally {
       setCarregandoLogin(false);
     }
@@ -402,7 +431,7 @@ function App() {
               <div className="b-input-group" style={{ position: 'relative' }}>
                 <label>Senha</label>
                 <input type={mostrarSenhaLogin ? "text" : "password"} name="password" autoComplete="current-password" className="b-input" placeholder="••••••••" value={credenciais.senha} onChange={(e) => setCredenciais({...credenciais, senha: e.target.value})} required style={{ paddingRight: '40px' }} />
-                <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', top: '33px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
+                <button type="button" onClick={() => setMostrarSenhaLogin(!mostrarSenhaLogin)} style={{ position: 'absolute', right: '12px', top: '38px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-mocha)' }}>
                   {mostrarSenhaLogin ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
                 </button>
               </div>
@@ -427,7 +456,6 @@ function App() {
     );
   }
 
-  // ================= RENDERIZAÇÃO DA BARRA LATERAL =================
   const ehTI = usuarioLogado?.setor?.toUpperCase() === 'TI';
 
   return (
@@ -438,7 +466,6 @@ function App() {
         </div>
       )}
 
-      {/* DIALOG DE CONFIRMAÇÃO CUSTOMIZADO (SUBSTITUI O WINDOW.CONFIRM) */}
       {dialogoConfirmacao && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(253, 251, 247, 0.8)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div className="b-card" style={{ maxWidth: '420px', textAlign: 'center', padding: '2rem' }}>
