@@ -298,18 +298,6 @@ function App() {
     if (modo === 'historico') carregarHistorico();
   }, [modo]);
 
-  const solicitarLimpezaHistorico = () => {
-    confirmarAcao(
-      'Limpar Histórico da Nuvem',
-      'Tem certeza que deseja apagar todos os registros de auditoria?',
-      async () => {
-        await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        carregarHistorico();
-        exibirToast('Histórico apagado com sucesso.', 'sucesso');
-      }
-    );
-  };
-
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar com Omie.');
@@ -759,14 +747,7 @@ function App() {
           </div>
         )}
 
-        {modo === 'historico' && ehTI && (
-          <div className="b-card fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
-              <button onClick={solicitarLimpezaHistorico} className="b-btn-ghost" style={{ color: 'var(--danger-terracotta)' }}>Limpar Histórico</button>
-            </div>
-            
-            <div className="b-table-wrapper">
+        
               <table className="b-table">
                 <thead>
                   <tr>
@@ -789,9 +770,6 @@ function App() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* ================= MODAL DE EDIÇAO DE USUÁRIO ================= */}
