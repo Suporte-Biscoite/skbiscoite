@@ -384,8 +384,10 @@ function App() {
       if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com este nome.`);
 
       const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
-      // Aqui passamos o formInd.categoria no final
-      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao, formInd.categoria);
+      const nomeDaFamilia = obterNomeFamilia(formInd.categoria); // Pega o nome correto
+
+      // Passa o nomeDaFamilia para a API
+      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao, nomeDaFamilia);
       
       setSkuGerado(vaga.codigo);
       await registrarHistorico(vaga.codigo, descFormatada); 
@@ -446,14 +448,15 @@ function App() {
 
         if (!catRaw || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
 
-        // Validação Inteligente: Transforma texto da planilha no Prefixo correto
+        // Traduz textos da planilha para prefixos
         let prefixoNum = catRaw.replace(/\D/g, ''); 
         if (!prefixoNum) {
           if (catRaw.includes('EMBALAGEM')) prefixoNum = '200';
-          else if (catRaw.includes('EXTERNO')) prefixoNum = '300';
-          else if (catRaw.includes('INTERNO')) prefixoNum = '400';
+          else if (catRaw.includes('REVENDA')) prefixoNum = '300';
+          else if (catRaw.includes('PRONTO')) prefixoNum = '400';
           else if (catRaw.includes('CESTA')) prefixoNum = '500';
-          else if (catRaw.includes('ENVASE')) prefixoNum = '1010';
+          else if (catRaw.includes('SUPRIMENTO')) prefixoNum = '700';
+          else if (catRaw.includes('INSUMO')) prefixoNum = '1010';
         }
 
         if (!prefixoNum) {
@@ -464,9 +467,10 @@ function App() {
         if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr)) { setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Já existe no Omie.' }]); continue; }
 
         const vaga = encontrarProximaVaga(todosCodigos, prefixoNum);
+        const nomeDaFamilia = obterNomeFamilia(prefixoNum); // Pega o nome para o Omie
+
         try {
-          // Passando o prefixoNum no final
-          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao, prefixoNum);
+          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao, nomeDaFamilia);
           if (vaga.acao === 'IncluirProduto') todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
           else { const p = todosCodigos.find(x => x.codigo === vaga.codigo); if (p) p.descricao = descStr; }
           
@@ -628,11 +632,12 @@ function App() {
                   <label>Categoria (Prefixo)</label>
                   <select name="categoria" className="b-input" value={formInd.categoria} onChange={handleChangeInd} required>
                     <option value="">Selecione...</option>
-                    <option value="200">200 - EMBALAGEM</option>
-                    <option value="300">300 - EXTERNO</option>
-                    <option value="400">400 - INTERNO</option>
+                    <option value="400">400 - PRODUTOS PRONTOS</option>
+                    <option value="300">300 - PRODUTOS PARA REVENDA</option>
+                    <option value="1010">1010 - INSUMOS</option>
+                    <option value="700">700 - SUPRIMENTOS</option>
                     <option value="500">500 - CESTAS</option>
-                    <option value="1010">1010 - ENVASE</option>
+                    <option value="200">200 - EMBALAGEM</option>
                   </select>
                 </div>
                 
