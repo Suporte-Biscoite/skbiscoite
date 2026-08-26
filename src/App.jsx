@@ -189,7 +189,6 @@ function App() {
       }]);
       if (error) throw error;
 
-      // Dispara o e-mail de Boas Vindas com a senha e login recém criados!
       try {
         await fetch('/api/enviar-email', {
           method: 'POST',
@@ -298,18 +297,6 @@ function App() {
     if (modo === 'historico') carregarHistorico();
   }, [modo]);
 
-  const solicitarLimpezaHistorico = () => {
-    confirmarAcao(
-      'Limpar Histórico da Nuvem',
-      'Tem certeza que deseja apagar todos os registros de auditoria?',
-      async () => {
-        await supabase.from('historico_skus').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        carregarHistorico();
-        exibirToast('Histórico apagado com sucesso.', 'sucesso');
-      }
-    );
-  };
-
   const buscarTodosCodigosOmie = async () => {
     const res1 = await fetch(`/api/codigos?pagina=1`);
     if (!res1.ok) throw new Error('Falha ao comunicar com Omie.');
@@ -349,11 +336,20 @@ function App() {
     }
   };
 
-  const cadastrarNoOmie = async (codigo, descricao, ncm, acao) => {
+  // ================= AQUI A FUNÇÃO FOI ATUALIZADA PARA FAMÍLIA E UNIDADE =================
+  const cadastrarNoOmie = async (codigo, descricao, ncm, acao, prefixo) => {
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
     const res = await fetch('/api/cadastrar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigo, descricao, unidade: "UN", preco: 0, ncm: ncmFormatado, acao })
+      body: JSON.stringify({ 
+        codigo, 
+        descricao, 
+        unidade: "UN", // Enviando a Unidade
+        preco: 0, 
+        ncm: ncmFormatado, 
+        acao,
+        familia: prefixo // Enviando a Categoria como Família
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erro no Omie.');
@@ -375,7 +371,8 @@ function App() {
       if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com este nome.`);
 
       const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
-      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao);
+      // Aqui passamos o formInd.categoria no final
+      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao, formInd.categoria);
       
       setSkuGerado(vaga.codigo);
       await registrarHistorico(vaga.codigo, descFormatada); 
@@ -420,6 +417,7 @@ function App() {
     reader.readAsArrayBuffer(file);
   };
 
+  // ================= AQUI A FUNÇÃO FOI ATUALIZADA PARA A PLANILHA =================
   const processarEmMassa = async () => {
     if (dadosPlanilha.length === 0) return exibirToast("Envie uma planilha válida.", "erro");
     setProcMassa(true); setLogsMassa([]);
@@ -429,16 +427,33 @@ function App() {
 
       for (let i = 0; i < dadosPlanilha.length; i++) {
         const linha = dadosPlanilha[i];
-        const catStr = String(linha.CATEGORIA || '').trim();
+        let catRaw = String(linha.CATEGORIA || '').toUpperCase().trim();
         const descStr = String(linha.DESCRICAO || '').toUpperCase().trim();
         const ncmStr = linha.NCM ? String(linha.NCM).replace(/\D/g, '').trim() : '';
 
-        if (!catStr || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
+        if (!catRaw || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
+
+        // Validação Inteligente: Transforma texto da planilha no Prefixo correto
+        let prefixoNum = catRaw.replace(/\D/g, ''); 
+        if (!prefixoNum) {
+          if (catRaw.includes('EMBALAGEM')) prefixoNum = '200';
+          else if (catRaw.includes('EXTERNO')) prefixoNum = '300';
+          else if (catRaw.includes('INTERNO')) prefixoNum = '400';
+          else if (catRaw.includes('CESTA')) prefixoNum = '500';
+          else if (catRaw.includes('ENVASE')) prefixoNum = '1010';
+        }
+
+        if (!prefixoNum) {
+          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Categoria inválida (${catRaw}).` }]);
+          continue;
+        }
+
         if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr)) { setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Já existe no Omie.' }]); continue; }
 
-        const vaga = encontrarProximaVaga(todosCodigos, catStr);
+        const vaga = encontrarProximaVaga(todosCodigos, prefixoNum);
         try {
-          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao);
+          // Passando o prefixoNum no final
+          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao, prefixoNum);
           if (vaga.acao === 'IncluirProduto') todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
           else { const p = todosCodigos.find(x => x.codigo === vaga.codigo); if (p) p.descricao = descStr; }
           
@@ -731,7 +746,6 @@ function App() {
                     </select>
                   </div>
                   
-                  {/* --- BOTÃO DE GERAR SENHA NO CADASTRO --- */}
                   <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-start', marginTop: '-10px', marginBottom: '-5px' }}>
                     <button type="button" onClick={() => {
                       const senhaGerada = gerarSenhaForte();
@@ -763,7 +777,6 @@ function App() {
           <div className="b-card fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
-              <button onClick={solicitarLimpezaHistorico} className="b-btn-ghost" style={{ color: 'var(--danger-terracotta)' }}>Limpar Histórico</button>
             </div>
             
             <div className="b-table-wrapper">

@@ -8,8 +8,8 @@ export default async function handler(req, res) {
 
   if (!APP_KEY || !APP_SECRET) return res.status(500).json({ error: 'Credenciais ausentes na Vercel.' });
 
-  // Recebemos a "acao" que pode ser "IncluirProduto" (novo buraco) ou "AlterarProduto" (sobrescrever stand-by)
-  const { codigo, descricao, unidade, preco, ncm, acao } = req.body;
+  // Agora extraímos também a "familia" que passamos a enviar pelo React
+  const { codigo, descricao, unidade, preco, ncm, acao, familia } = req.body;
   const omieCall = acao || "IncluirProduto";
 
   try {
@@ -21,7 +21,8 @@ export default async function handler(req, res) {
         codigo_produto_integracao: codigo, 
         codigo: codigo,
         descricao: descricao,
-        unidade: unidade,
+        unidade: unidade || "UN",        // Fallback de segurança garantindo o 'UN'
+        codigo_familia: familia || "",   // Mapeamento correto para a Família no Omie
         valor_unitario: parseFloat(preco) || 0,
         ncm: ncm
       }]
