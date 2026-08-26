@@ -89,6 +89,19 @@ function App() {
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
+  // Função para mapear o prefixo para o nome exato da Família no Omie
+  const obterNomeFamilia = (prefixo) => {
+    const mapa = {
+      '200': 'EMBALAGEM',
+      '300': 'PRODUTOS PARA REVENDA',
+      '400': 'PRODUTOS PRONTOS',
+      '500': 'CESTAS',
+      '700': 'SUPRIMENTOS',
+      '1010': 'INSUMOS'
+    };
+    return mapa[prefixo] || '';
+  };
+
   // ================= ÍCONES SVG =================
   const IconeOlhoAberto = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
