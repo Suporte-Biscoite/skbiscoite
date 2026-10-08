@@ -5,9 +5,9 @@ export default async function handler(req, res) {
 
   const APP_KEY = process.env.OMIE_APP_KEY;
   const APP_SECRET = process.env.OMIE_APP_SECRET;
-  
+
   // Lê a página da URL (ex: ?pagina=2), se não tiver, vai na 1
-  const pagina = parseInt(req.query.pagina) || 1; 
+  const pagina = parseInt(req.query.pagina) || 1;
 
   if (!APP_KEY || !APP_SECRET) {
     return res.status(500).json({ error: 'Credenciais ausentes.' });
@@ -27,13 +27,17 @@ export default async function handler(req, res) {
     });
 
     const data = response.data;
-    const codigos = [];
-    
+    const produtos = [];
+
     if (data.produto_servico_cadastro) {
       data.produto_servico_cadastro.forEach(prod => {
-        // Pegando o campo "codigo" (SKU) em vez do ID interno
+        // "codigo" é o SKU; "codigo_produto" é o ID interno do Omie (necessário para AlterarProduto)
         if (prod.codigo) {
-          codigos.push(String(prod.codigo).trim());
+          produtos.push({
+            codigo: String(prod.codigo).trim(),
+            descricao: String(prod.descricao || '').trim(),
+            codigo_produto: prod.codigo_produto
+          });
         }
       });
     }
@@ -42,11 +46,13 @@ export default async function handler(req, res) {
     res.status(200).json({
       pagina_atual: data.pagina,
       total_paginas: data.total_de_paginas,
-      codigos: codigos
+      produtos,
+      codigos: produtos.map(p => p.codigo) // mantido por compatibilidade
     });
 
   } catch (error) {
-    console.error("Erro no Omie:", error);
-    res.status(500).json({ error: "Erro ao buscar dados do Omie" });
+    const msgErroOmie = error.response?.data?.faultstring || "Erro ao buscar dados do Omie";
+    console.error("Erro no Omie:", msgErroOmie);
+    res.status(500).json({ error: msgErroOmie });
   }
 }

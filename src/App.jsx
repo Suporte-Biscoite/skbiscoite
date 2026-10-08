@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
+import { FAMILIAS, resolverFamilia, obterFamiliaPorPrefixo, normalizarTexto } from './lib/familias.js';
+import { cadastrarComVaga as cadastrarComVagaNoOmie, lerLinhasDaPlanilha } from './lib/skus.js';
+import { montarModeloPlanilha } from './lib/modeloPlanilha.js';
 import './App.css';
+
+const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ================= CONEXÃO SUPABASE =================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -85,22 +90,10 @@ function App() {
   const [dadosPlanilha, setDadosPlanilha] = useState([]);
   const [procMassa, setProcMassa] = useState(false);
   const [logsMassa, setLogsMassa] = useState([]);
+  const [resumoMassa, setResumoMassa] = useState(null);
 
   const [historico, setHistorico] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
-
-  // Função para mapear o prefixo para o nome exato da Família no Omie
-  const obterNomeFamilia = (prefixo) => {
-    const mapa = {
-      '200': 'EMBALAGEM',
-      '300': 'PRODUTOS PARA REVENDA',
-      '400': 'PRODUTOS PRONTOS',
-      '500': 'CESTAS',
-      '700': 'SUPRIMENTOS',
-      '1010': 'INSUMOS'
-    };
-    return mapa[prefixo] || '';
-  };
 
   // ================= ÍCONES SVG =================
   const IconeOlhoAberto = () => (
@@ -310,68 +303,59 @@ function App() {
     if (modo === 'historico') carregarHistorico();
   }, [modo]);
 
-  const buscarTodosCodigosOmie = async () => {
-    const res1 = await fetch(`/api/codigos?pagina=1`);
-    if (!res1.ok) throw new Error('Falha ao comunicar com Omie.');
-    const data1 = await res1.json();
-    let todosCodigos = [...data1.codigos];
-    const totalPaginas = data1.total_paginas;
-
-    if (totalPaginas > 1) {
-      const promessas = [];
-      for (let p = 2; p <= totalPaginas; p++) promessas.push(fetch(`/api/codigos?pagina=${p}`).then(r => r.json()));
-      const resultados = await Promise.all(promessas);
-      resultados.forEach(req => { if (req.codigos) todosCodigos = [...todosCodigos, ...req.codigos]; });
-    }
-    return todosCodigos;
-  };
-
-  const encontrarProximaVaga = (todosCodigos, prefixo) => {
-    const prefixoStr = String(prefixo).trim(); 
-    const numDigitosSequencia = 7 - prefixoStr.length; 
-    const regex = new RegExp(`^${prefixoStr}\\d{${numDigitosSequencia}}$`);
-    const descricoesStandBy = ['PRODUTO INDEFINIDO', 'PRODUTO INDENIDO', 'CÓDIGO EM STAND-BY'];
-
-    const produtosDaCategoria = todosCodigos.filter(prod => {
-      const cod = typeof prod === 'string' ? prod : prod.codigo;
-      return cod && regex.test(String(cod).trim());
-    });
-
-    let proximaSequencia = 1; 
-    while (true) {
-      const codigoTestado = prefixoStr + proximaSequencia.toString().padStart(numDigitosSequencia, '0');
-      const produtoExistente = produtosDaCategoria.find(prod => String(typeof prod === 'string' ? prod : prod.codigo).trim() === codigoTestado);
-
-      if (!produtoExistente) return { codigo: codigoTestado, acao: 'IncluirProduto' };
-      const desc = (produtoExistente.descricao || '').toUpperCase().trim();
-      if (descricoesStandBy.includes(desc)) return { codigo: codigoTestado, acao: 'AlterarProduto' };
-      proximaSequencia++;
+  // Lê UMA página do Omie. Tenta de novo se falhar e, se não conseguir, interrompe tudo:
+  // seguir com a lista incompleta faz o gerador propor códigos que já existem.
+  const buscarPaginaOmie = async (pagina) => {
+    const maxTentativas = 4;
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+      try {
+        const res = await fetch(`/api/codigos?pagina=${pagina}`);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.produtos)) return data;
+        throw new Error(data.error || `HTTP ${res.status}`);
+      } catch (err) {
+        if (tentativa === maxTentativas) throw new Error(`Falha ao ler a página ${pagina} do Omie: ${err.message}`);
+        await pausa(1000 * tentativa);
+      }
     }
   };
 
-  // ================= AQUI A FUNÇÃO FOI ATUALIZADA PARA FAMÍLIA E UNIDADE =================
-  const cadastrarNoOmie = async (codigo, descricao, ncm, acao, prefixo) => {
+  // Páginas uma de cada vez (em paralelo o Omie recusa e a lista vinha incompleta).
+  const buscarTodosProdutosOmie = async () => {
+    const primeira = await buscarPaginaOmie(1);
+    let produtos = [...primeira.produtos];
+    const totalPaginas = primeira.total_paginas || 1;
+    for (let p = 2; p <= totalPaginas; p++) {
+      const pagina = await buscarPaginaOmie(p);
+      produtos = produtos.concat(pagina.produtos);
+    }
+    return produtos;
+  };
+
+  const cadastrarNoOmie = async ({ codigo, descricao, ncm, acao, familia, codigo_produto }) => {
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
     const res = await fetch('/api/cadastrar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        codigo, 
-        descricao, 
-        unidade: "UN", // Enviando a Unidade
-        preco: 0, 
-        ncm: ncmFormatado, 
+      body: JSON.stringify({
+        codigo,
+        descricao,
+        preco: 0,
+        ncm: ncmFormatado,
         acao,
-        familia: prefixo // Enviando a Categoria como Família
+        familia, // nome da família no Omie (ex: PRODUTOS PRONTOS)
+        codigo_produto // só usado quando reaproveita um código em stand-by
       })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Erro no Omie.');
     return data;
   };
 
+  const cadastrarComVaga = (params) => cadastrarComVagaNoOmie(cadastrarNoOmie, params);
+
   const handleChangeInd = (e) => {
     let val = e.target.value.toUpperCase();
-    if (e.target.name === 'ncm') val = val.replace(/\D/g, ''); 
+    if (e.target.name === 'ncm') val = val.replace(/\D/g, '');
     setFormInd({ ...formInd, [e.target.name]: val });
   };
 
@@ -380,43 +364,28 @@ function App() {
     setProcInd(true); setSkuGerado(null); setErroInd(null);
     try {
       const descFormatada = formInd.descricao.trim();
-      const todosCodigos = await buscarTodosCodigosOmie();
-      if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descFormatada)) throw new Error(`Já existe um produto com este nome.`);
+      const familia = obterFamiliaPorPrefixo(formInd.categoria);
+      if (!familia) throw new Error('Selecione a família do produto.');
 
-      const vaga = encontrarProximaVaga(todosCodigos, formInd.categoria);
-      const nomeDaFamilia = obterNomeFamilia(formInd.categoria); // Pega o nome correto
+      const produtos = await buscarTodosProdutosOmie();
+      const nomeNormalizado = normalizarTexto(descFormatada);
+      if (produtos.some(prod => normalizarTexto(prod.descricao) === nomeNormalizado)) throw new Error(`Já existe um produto com este nome.`);
 
-      // Passa o nomeDaFamilia para a API
-      await cadastrarNoOmie(vaga.codigo, descFormatada, formInd.ncm, vaga.acao, nomeDaFamilia);
-      
-      setSkuGerado(vaga.codigo);
-      await registrarHistorico(vaga.codigo, descFormatada); 
-      setFormInd({ categoria: formInd.categoria, descricao: '', ncm: '' }); 
+      const resultado = await cadastrarComVaga({ produtos, ocupados: new Set(), familia, descricao: descFormatada, ncm: formInd.ncm });
+
+      setSkuGerado(resultado.codigo);
+      await registrarHistorico(resultado.codigo, descFormatada);
+      setFormInd({ categoria: formInd.categoria, descricao: '', ncm: '' });
     } catch (err) { setErroInd(err.message); } finally { setProcInd(false); }
   };
 
   const baixarPlanilhaModelo = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Modelo SKU Biscoitê');
-    worksheet.mergeCells('A1:C1');
-    worksheet.getCell('A1').value = 'Planilha de Importação de SKUs';
-    worksheet.getCell('A1').font = { name: 'Arial', size: 16, color: { argb: 'FFFFFFFF' }, bold: true };
-    worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B1E16' } };
-    
-    worksheet.mergeCells('A2:C2');
-    worksheet.getCell('A2').value = 'Módulo: Gestão de Produtos Biscoitê';
-    worksheet.getCell('A2').font = { name: 'Arial', size: 11, color: { argb: 'FFFFFFFF' } };
-    worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B1E16' } };
-    
-    worksheet.addRow(['(obrigatório)\nPrefixo numérico\n(ex: 400)', '(obrigatório)\nNome em maiúsculas', '(opcional)\nNCM apenas números']).height = 60;
-    worksheet.addRow(['CATEGORIA', 'DESCRICAO', 'NCM']).font = { bold: true };
-    worksheet.addRow(['400', 'PRODUTO DE TESTE', '19059020']);
-    worksheet.getColumn(1).width = 25; worksheet.getColumn(2).width = 50; worksheet.getColumn(3).width = 25;
-
+    const workbook = montarModeloPlanilha(ExcelJS);
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Modelo_SKUs.xlsx'; anchor.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const lerArquivoUpload = (e) => {
@@ -424,61 +393,62 @@ function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      setDadosPlanilha(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { range: 3 }));
-      setLogsMassa([]); 
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+        const aba = workbook.Sheets[workbook.SheetNames[0]];
+        const matriz = XLSX.utils.sheet_to_json(aba, { header: 1, defval: '' });
+        const primeiraLinha = aba['!ref'] ? XLSX.utils.decode_range(aba['!ref']).s.r + 1 : 1;
+        const linhas = lerLinhasDaPlanilha(matriz, primeiraLinha);
+        if (linhas.length === 0) exibirToast('Nenhuma linha preenchida na planilha.', 'erro');
+        setDadosPlanilha(linhas);
+      } catch (err) {
+        setDadosPlanilha([]);
+        exibirToast(err.message, 'erro');
+      }
+      setLogsMassa([]); setResumoMassa(null);
     };
     reader.readAsArrayBuffer(file);
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois de corrigir
   };
 
-  // ================= AQUI A FUNÇÃO FOI ATUALIZADA PARA A PLANILHA =================
   const processarEmMassa = async () => {
     if (dadosPlanilha.length === 0) return exibirToast("Envie uma planilha válida.", "erro");
-    setProcMassa(true); setLogsMassa([]);
+    setProcMassa(true); setLogsMassa([]); setResumoMassa(null);
+
+    const registrar = (item) => setLogsMassa(prev => [...prev, item]);
+    let criados = 0; let erros = 0;
 
     try {
-      const todosCodigos = await buscarTodosCodigosOmie();
+      const produtos = await buscarTodosProdutosOmie();
+      const ocupados = new Set();
+      const descricoesExistentes = new Set(produtos.map(p => normalizarTexto(p.descricao)).filter(Boolean));
 
-      for (let i = 0; i < dadosPlanilha.length; i++) {
-        const linha = dadosPlanilha[i];
-        let catRaw = String(linha.CATEGORIA || '').toUpperCase().trim();
-        const descStr = String(linha.DESCRICAO || '').toUpperCase().trim();
-        const ncmStr = linha.NCM ? String(linha.NCM).replace(/\D/g, '').trim() : '';
+      for (const linha of dadosPlanilha) {
+        const rotulo = `Linha ${linha.linha}`;
+        const descStr = linha.descricao.toUpperCase().trim();
 
-        if (!catRaw || !descStr) { setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Faltam dados.` }]); continue; }
+        if (!linha.familia || !descStr) { erros++; registrar({ status: 'Erro', msg: `${rotulo}: faltam dados (família e descrição são obrigatórias).` }); continue; }
 
-        // Traduz textos da planilha para prefixos
-        let prefixoNum = catRaw.replace(/\D/g, ''); 
-        if (!prefixoNum) {
-          if (catRaw.includes('EMBALAGEM')) prefixoNum = '200';
-          else if (catRaw.includes('REVENDA')) prefixoNum = '300';
-          else if (catRaw.includes('PRONTO')) prefixoNum = '400';
-          else if (catRaw.includes('CESTA')) prefixoNum = '500';
-          else if (catRaw.includes('SUPRIMENTO')) prefixoNum = '700';
-          else if (catRaw.includes('INSUMO')) prefixoNum = '1010';
-        }
+        const familia = resolverFamilia(linha.familia);
+        if (!familia) { erros++; registrar({ status: 'Erro', desc: descStr, msg: `${rotulo}: família não reconhecida (${linha.familia}). Use uma da lista do modelo.` }); continue; }
 
-        if (!prefixoNum) {
-          setLogsMassa(prev => [...prev, { status: 'Erro', msg: `Linha ${i+1}: Categoria inválida (${catRaw}).` }]);
-          continue;
-        }
-
-        if (todosCodigos.find(prod => (prod.descricao || '').toUpperCase().trim() === descStr)) { setLogsMassa(prev => [...prev, { status: 'Erro', desc: descStr, msg: 'Já existe no Omie.' }]); continue; }
-
-        const vaga = encontrarProximaVaga(todosCodigos, prefixoNum);
-        const nomeDaFamilia = obterNomeFamilia(prefixoNum); // Pega o nome para o Omie
+        if (descricoesExistentes.has(normalizarTexto(descStr))) { erros++; registrar({ status: 'Erro', desc: descStr, msg: `${rotulo}: já existe no Omie (ou está repetido na planilha).` }); continue; }
 
         try {
-          await cadastrarNoOmie(vaga.codigo, descStr, ncmStr, vaga.acao, nomeDaFamilia);
-          if (vaga.acao === 'IncluirProduto') todosCodigos.push({ codigo: vaga.codigo, descricao: descStr });
-          else { const p = todosCodigos.find(x => x.codigo === vaga.codigo); if (p) p.descricao = descStr; }
-          
-          setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: vaga.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso' }]);
-          await registrarHistorico(vaga.codigo, descStr); 
-        } catch (err) { setLogsMassa(prev => [...prev, { sku: vaga.codigo, desc: descStr, status: 'Erro', msg: err.message }]); }
+          const resultado = await cadastrarComVaga({ produtos, ocupados, familia, descricao: descStr, ncm: linha.ncm });
+          descricoesExistentes.add(normalizarTexto(descStr));
+          criados++;
+          const avisoFamilia = resultado.resp.familia_id ? '' : 'família não vinculada no Omie, confira o cadastro';
+          registrar({ sku: resultado.codigo, desc: descStr, msg: avisoFamilia, status: resultado.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso' });
+          await registrarHistorico(resultado.codigo, descStr).catch(() => {});
+        } catch (err) {
+          erros++;
+          registrar({ sku: err.codigo, desc: descStr, status: 'Erro', msg: `${rotulo}: ${err.message}` });
+        }
+
+        await pausa(350); // respeita o limite de chamadas do Omie
       }
-    } catch (err) { exibirToast("Erro crítico na importação.", "erro"); } finally { setProcMassa(false); setDadosPlanilha([]); }
+    } catch (err) { exibirToast(`Erro crítico na importação: ${err.message}`, "erro"); } finally { setResumoMassa({ criados, erros }); setProcMassa(false); setDadosPlanilha([]); }
   };
 
   // ================= TELA DE LOGIN =================
@@ -629,15 +599,12 @@ function App() {
             <form onSubmit={gerarECadastrarIndividual}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '1.5rem' }}>
                 <div className="b-input-group">
-                  <label>Categoria (Prefixo)</label>
+                  <label>Família do Produto</label>
                   <select name="categoria" className="b-input" value={formInd.categoria} onChange={handleChangeInd} required>
                     <option value="">Selecione...</option>
-                    <option value="400">400 - PRODUTOS PRONTOS</option>
-                    <option value="300">300 - PRODUTOS PARA REVENDA</option>
-                    <option value="1010">1010 - INSUMOS</option>
-                    <option value="700">700 - SUPRIMENTOS</option>
-                    <option value="500">500 - CESTAS</option>
-                    <option value="200">200 - EMBALAGEM</option>
+                    {FAMILIAS.map(f => (
+                      <option key={f.prefixo} value={f.prefixo}>{f.familia} ({f.prefixo} · {f.grupo})</option>
+                    ))}
                   </select>
                 </div>
                 
@@ -677,9 +644,19 @@ function App() {
               <label className="b-btn" style={{ cursor: 'pointer' }}>Selecionar Arquivo<input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={lerArquivoUpload} /></label>
             </div>
 
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', marginBottom: '1.5rem' }}>
+              Colunas: FAMILIA (escolha na lista: {FAMILIAS.map(f => f.familia).join(' · ')}), DESCRICAO e NCM. O código do SKU é gerado automaticamente pela família.
+            </p>
+
             {dadosPlanilha.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
                 <button onClick={processarEmMassa} disabled={procMassa} className="b-btn">{procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Importação (${dadosPlanilha.length} itens)`}</button>
+              </div>
+            )}
+
+            {resumoMassa && (
+              <div style={{ marginBottom: '1rem', fontWeight: '600', color: resumoMassa.erros > 0 ? 'var(--danger-terracotta)' : 'var(--success-pistachio)' }}>
+                {resumoMassa.criados} cadastrado(s) · {resumoMassa.erros} com erro
               </div>
             )}
 
@@ -689,7 +666,7 @@ function App() {
                 <div style={{ background: 'var(--bg-vanilla)', border: '1px solid var(--border-cream)', padding: '1rem', borderRadius: 'var(--radius-sm)', minHeight: '150px', maxHeight: '250px', overflowY: 'auto', fontSize: '0.9rem' }}>
                   {logsMassa.map((log, i) => (
                     <div key={i} style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-cream)', color: log.status.includes('Sucesso') ? 'var(--success-pistachio)' : 'var(--danger-terracotta)', fontWeight: '500' }}>
-                      <strong>{log.sku || 'Aviso'}</strong> - {log.desc || log.msg}
+                      <strong>{log.sku || 'Aviso'}</strong> - {[log.desc, log.msg].filter(Boolean).join(' — ')}
                     </div>
                   ))}
                 </div>
