@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { createClient } from '@supabase/supabase-js';
 import { FAMILIAS, resolverFamilia, obterFamiliaPorPrefixo, normalizarTexto } from './lib/familias.js';
 import { cadastrarComVaga as cadastrarComVagaNoOmie, lerLinhasDaPlanilha } from './lib/skus.js';
 import { montarModeloPlanilha } from './lib/modeloPlanilha.js';
@@ -9,10 +8,25 @@ import './App.css';
 
 const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ================= CONEXÃO SUPABASE =================
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// ================= CONEXÃO COM O BANCO (via /api, Neon) =================
+// O navegador não acessa o banco: tudo passa pelas rotas em /api, que conferem a sessão.
+async function chamarApi(caminho, { metodo = 'GET', corpo, token } = {}) {
+  const res = await fetch(caminho, {
+    method: metodo,
+    headers: {
+      ...(corpo ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+  });
+  const dados = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const erro = new Error(dados.error || `Erro ${res.status}`);
+    erro.status = res.status;
+    throw erro;
+  }
+  return dados;
+}
 
 // ================= GERADOR DE SENHA FORTE =================
 function gerarSenhaForte(tamanho = 12) {
@@ -111,9 +125,14 @@ function App() {
   };
 
   // ================= LÓGICA DE USUÁRIOS =================
+  const api = (caminho, opcoes = {}) => chamarApi(caminho, { ...opcoes, token: usuarioLogado?.token });
+
   const carregarUsuarios = async () => {
-    const { data } = await supabase.from('usuarios').select('*').order('nome', { ascending: true });
-    if (data) setUsuariosCadastrados(data);
+    try {
+      setUsuariosCadastrados(await api('/api/usuarios'));
+    } catch (err) {
+      exibirToast(err.message, 'erro');
+    }
   };
 
   useEffect(() => {
@@ -124,16 +143,15 @@ function App() {
     e.preventDefault();
     setCarregandoModal(true);
     try {
-      const { error } = await supabase.from('usuarios').update({
+      await api('/api/usuarios', { metodo: 'PATCH', corpo: {
+        id: usuarioEditando.id,
         nome: usuarioEditando.nome,
         email: usuarioEditando.email,
         login: usuarioEditando.login,
         setor: usuarioEditando.setor,
         ativo: usuarioEditando.ativo
-      }).eq('id', usuarioEditando.id);
-      
-      if (error) throw error;
-      
+      } });
+
       exibirToast(`Dados de ${usuarioEditando.nome} atualizados.`, 'sucesso');
       setUsuarioEditando(null);
       carregarUsuarios();
@@ -150,19 +168,12 @@ function App() {
       `Tem certeza que deseja redefinir o acesso de ${usuarioEditando.nome}?`,
       async () => {
         setCarregandoModal(true);
-        const novaSenha = gerarSenhaForte(); 
         try {
-          await supabase.from('usuarios').update({ senha: novaSenha }).eq('id', usuarioEditando.id);
-          try {
-            const res = await fetch('/api/enviar-email', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: usuarioEditando.email, nome: usuarioEditando.nome, senha: novaSenha, login: usuarioEditando.login })
-            });
-            if (!res.ok) throw new Error('Falha no envio de e-mail');
+          const resultado = await api('/api/usuarios', { metodo: 'POST', corpo: { acao: 'nova-senha', id: usuarioEditando.id } });
+          if (resultado.emailEnviado) {
             exibirToast(`Senha gerada e enviada para ${usuarioEditando.email}.`, 'sucesso');
-          } catch (emailErr) {
-            exibirToast(`Senha de ${usuarioEditando.nome} alterada para: ${novaSenha}`, 'sucesso');
+          } else {
+            exibirToast(`Senha de ${usuarioEditando.nome} alterada para: ${resultado.senha}`, 'sucesso');
           }
         } catch (err) {
           exibirToast('Erro ao acessar o banco de dados.', 'erro');
@@ -184,37 +195,17 @@ function App() {
     }
 
     try {
-      const { data: existente } = await supabase.from('usuarios').select('id').or(`email.eq.${formUsuario.email},login.eq.${formUsuario.login}`);
-      if (existente && existente.length > 0) {
-        setCarregandoRegistro(false);
-        return setErroFormUser('Este e-mail ou login já está cadastrado.');
-      }
+      const { emailEnviado } = await api('/api/usuarios', { metodo: 'POST', corpo: {
+        nome: formUsuario.nome, login: formUsuario.login, senha: formUsuario.senha, email: formUsuario.email, setor: formUsuario.setor
+      } });
 
-      const { error } = await supabase.from('usuarios').insert([{
-        nome: formUsuario.nome, login: formUsuario.login, senha: formUsuario.senha, email: formUsuario.email, setor: formUsuario.setor, ativo: true
-      }]);
-      if (error) throw error;
-
-      try {
-        await fetch('/api/enviar-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            email: formUsuario.email, 
-            nome: formUsuario.nome, 
-            senha: formUsuario.senha, 
-            login: formUsuario.login 
-          })
-        });
-      } catch (errEmail) {
-        console.error("Aviso: E-mail de boas-vindas não foi enviado.", errEmail);
-      }
-
-      setSucessoFormUser(`Colaborador cadastrado e credenciais enviadas por e-mail!`);
+      setSucessoFormUser(emailEnviado
+        ? 'Colaborador cadastrado e credenciais enviadas por e-mail!'
+        : 'Colaborador cadastrado, mas o e-mail não foi enviado. Repasse as credenciais manualmente.');
       setFormUsuario({ nome: '', login: '', senha: '', confirmaSenha: '', email: '', setor: '', ativo: true });
       setTimeout(() => { setAbaGestao('lista'); setSucessoFormUser(''); }, 2000); 
     } catch (error) {
-      setErroFormUser('Erro ao criar usuário: ' + error.message);
+      setErroFormUser(error.status === 409 ? error.message : 'Erro ao criar usuário: ' + error.message);
     } finally {
       setCarregandoRegistro(false);
     }
@@ -226,33 +217,13 @@ function App() {
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
 
     try {
-      const { data: usuario } = await supabase.from('usuarios').select('id, nome, email, login').eq('email', emailRecuperacao).single();
-      if (!usuario) {
-        setErroLogin('E-mail não encontrado no sistema.');
-        setCarregandoLogin(false);
-        return;
-      }
-      
-      const novaSenha = gerarSenhaForte();
-      await supabase.from('usuarios').update({ senha: novaSenha }).eq('email', emailRecuperacao);
-
-      try {
-        const res = await fetch('/api/enviar-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: usuario.email, nome: usuario.nome, senha: novaSenha, login: usuario.login })
-        });
-        if (!res.ok) throw new Error('Falha no disparo do Resend');
-        setTelaLogin('login');
-        setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
-        setCooldownRecuperacao(60); 
-      } catch (emailErr) {
-        setTelaLogin('login');
-        setSucessoLogin(`Atenção: E-mail indisponível. Sua nova senha é: ${novaSenha}`);
-      }
+      await chamarApi('/api/recuperar-senha', { metodo: 'POST', corpo: { email: emailRecuperacao } });
+      setTelaLogin('login');
+      setSucessoLogin(`Nova senha gerada e enviada para sua caixa de entrada.`);
+      setCooldownRecuperacao(60);
       setEmailRecuperacao('');
     } catch (err) {
-      setErroLogin('Erro ao comunicar com o banco de dados Supabase.');
+      setErroLogin(err.message);
     } finally {
       setCarregandoLogin(false);
     }
@@ -263,24 +234,11 @@ function App() {
     setCarregandoLogin(true); setErroLogin(''); setSucessoLogin('');
 
     try {
-      const { data } = await supabase.from('usuarios')
-        .select('*')
-        .or(`email.eq.${credenciais.email},login.eq.${credenciais.email}`)
-        .eq('senha', credenciais.senha)
-        .single();
-      
-      if (data) {
-        if (data.ativo === false) {
-          setErroLogin('Seu acesso está inativo. Contate o administrador.');
-        } else {
-          setUsuarioLogado(data);
-          setCredenciais({ email: '', senha: '' });
-        }
-      } else {
-        setErroLogin('Credenciais incorretas.');
-      }
+      const { usuario, token } = await chamarApi('/api/login', { metodo: 'POST', corpo: { usuario: credenciais.email, senha: credenciais.senha } });
+      setUsuarioLogado({ ...usuario, token });
+      setCredenciais({ email: '', senha: '' });
     } catch (err) {
-      setErroLogin('Erro de comunicação. Verifique os dados.');
+      setErroLogin(err.message);
     } finally {
       setCarregandoLogin(false);
     }
@@ -289,14 +247,18 @@ function App() {
   // ================= LÓGICA DE HISTÓRICO E OMIE =================
   const registrarHistorico = async (sku, descricao) => {
     if (!usuarioLogado) return;
-    await supabase.from('historico_skus').insert([{ email_usuario: usuarioLogado.email, sku, descricao }]);
+    await api('/api/historico', { metodo: 'POST', corpo: { sku, descricao } });
   };
 
   const carregarHistorico = async () => {
     setCarregandoHistorico(true);
-    const { data } = await supabase.from('historico_skus').select('*').order('criado_em', { ascending: false }).limit(100); 
-    if (data) setHistorico(data);
-    setCarregandoHistorico(false);
+    try {
+      setHistorico(await api('/api/historico'));
+    } catch (err) {
+      exibirToast(err.message, 'erro');
+    } finally {
+      setCarregandoHistorico(false);
+    }
   };
 
   useEffect(() => {
@@ -374,7 +336,8 @@ function App() {
       const resultado = await cadastrarComVaga({ produtos, ocupados: new Set(), familia, descricao: descFormatada, ncm: formInd.ncm });
 
       setSkuGerado(resultado.codigo);
-      await registrarHistorico(resultado.codigo, descFormatada);
+      // O SKU já foi criado no Omie: uma falha no histórico não pode virar erro na tela.
+      await registrarHistorico(resultado.codigo, descFormatada).catch((err) => console.error("Histórico não gravado:", err));
       setFormInd({ categoria: formInd.categoria, descricao: '', ncm: '' });
     } catch (err) { setErroInd(err.message); } finally { setProcInd(false); }
   };

@@ -6,7 +6,7 @@
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-auth%20%26%20logs-3ECF8E?logo=supabase&logoColor=white)
+![Supabase](https://img.shields.io/badge/Neon-Postgres-00E599?logo=postgresql&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-deploy-000000?logo=vercel&logoColor=white)
 ![Omie](https://img.shields.io/badge/Omie-ERP-0A5CFF)
 
@@ -26,7 +26,7 @@ no ERP com a família correta. Todo cadastro fica registrado em um histórico de
 | --- | --- |
 | **Novo SKU (individual)** | Escolhe a família, informa descrição e NCM e o sistema gera e cadastra o código no Omie. |
 | **Importação em massa** | Sobe uma planilha `.xlsx` e cadastra vários produtos de uma vez, com log linha a linha e resumo final. |
-| **Histórico** | Auditoria de todos os SKUs gerados, por usuário (Supabase). |
+| **Histórico** | Auditoria de todos os SKUs gerados, por usuário (Neon). |
 | **Gestão de equipe** | Cadastro e edição de colaboradores, com envio de credenciais por e-mail. Visível apenas para o setor **TI**. |
 
 ## 🔢 Como o código é gerado
