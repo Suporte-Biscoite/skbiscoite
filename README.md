@@ -6,7 +6,7 @@
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
-![Supabase](https://img.shields.io/badge/Neon-Postgres-00E599?logo=postgresql&logoColor=white)
+![Neon](https://img.shields.io/badge/Neon-Postgres-00E599?logo=postgresql&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-deploy-000000?logo=vercel&logoColor=white)
 ![Omie](https://img.shields.io/badge/Omie-ERP-0A5CFF)
 
@@ -85,7 +85,7 @@ Exemplos: `400` + `0001` = **`4000001`** · `1010` + `001` = **`1010001`**.
 
 - **Front-end:** React 19 + Vite
 - **Back-end:** funções serverless da Vercel (`/api`)
-- **Banco e histórico:** Supabase
+- **Banco e histórico:** [Neon](https://neon.tech) (Postgres), acessado só pelas rotas em `/api`
 - **ERP:** [API do Omie](https://developer.omie.com.br/service-list/)
 - **Planilhas:** `exceljs` (gera o modelo) e `xlsx` (lê o arquivo enviado)
 - **E-mail:** Resend
@@ -116,11 +116,11 @@ Configure na Vercel (e em um `.env.local` para rodar localmente). **Nunca** suba
 | --- | --- | --- |
 | `OMIE_APP_KEY` | `api/` | Chave do aplicativo no Omie |
 | `OMIE_APP_SECRET` | `api/` | Segredo do aplicativo no Omie |
-| `RESEND_API_KEY` | `api/enviar-email.js` | Envio de e-mails |
-| `VITE_SUPABASE_URL` | front-end | URL do projeto Supabase |
-| `VITE_SUPABASE_ANON_KEY` | front-end | Chave pública (anon) do Supabase |
+| `RESEND_API_KEY` | `api/_lib/email.js` | Envio de e-mails |
+| `DATABASE_URL` | `api/` | Connection string do Neon |
+| `SESSION_SECRET` | `api/` | Texto aleatório longo que assina as sessões de login |
 
-> As credenciais do Omie ficam apenas no servidor (`api/`) e nunca chegam ao navegador.
+> As credenciais do Omie e do banco ficam apenas no servidor (`api/`) e nunca chegam ao navegador.
 
 ## 🚀 Rodando localmente
 
