@@ -37,12 +37,19 @@ function lerToken(token) {
 // ou responde 401/403 e devolve null.
 export async function exigirUsuario(req, res, { somenteTI = false } = {}) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const dados = lerToken(token);
+  let dados, usuario;
+  try {
+    dados = lerToken(token);
+    if (dados) [usuario] = await sql`SELECT id, nome, email, login, setor, ativo FROM usuarios WHERE id = ${dados.id}`;
+  } catch (error) {
+    console.error('Erro ao conferir a sessão:', error);
+    res.status(500).json({ error: 'Erro ao conferir a sessão no servidor.' });
+    return null;
+  }
   if (!dados) {
     res.status(401).json({ error: 'Sessão expirada. Faça login novamente.' });
     return null;
   }
-  const [usuario] = await sql`SELECT id, nome, email, login, setor, ativo FROM usuarios WHERE id = ${dados.id}`;
   if (!usuario || usuario.ativo === false) {
     res.status(401).json({ error: 'Acesso inativo ou inexistente.' });
     return null;

@@ -271,7 +271,7 @@ function App() {
     const maxTentativas = 4;
     for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
       try {
-        const res = await fetch(`/api/codigos?pagina=${pagina}`);
+        const res = await fetch(`/api/codigos?pagina=${pagina}`, { headers: { Authorization: `Bearer ${usuarioLogado?.token}` } });
         const data = await res.json().catch(() => ({}));
         if (res.ok && Array.isArray(data.produtos)) return data;
         throw new Error(data.error || `HTTP ${res.status}`);
@@ -297,7 +297,7 @@ function App() {
   const cadastrarNoOmie = async ({ codigo, descricao, ncm, acao, familia, codigo_produto }) => {
     const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
     const res = await fetch('/api/cadastrar', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuarioLogado?.token}` },
       body: JSON.stringify({
         codigo,
         descricao,

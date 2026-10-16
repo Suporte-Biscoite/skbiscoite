@@ -1,7 +1,11 @@
 import axios from 'axios';
+import { exigirUsuario } from './_lib/sessao.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido' });
+
+  // Só quem está logado no SKBiscoitê pode usar a integração com o Omie.
+  if (!(await exigirUsuario(req, res))) return;
 
   const APP_KEY = process.env.OMIE_APP_KEY;
   const APP_SECRET = process.env.OMIE_APP_SECRET;
