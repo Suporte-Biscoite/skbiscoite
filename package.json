@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "verificar": "node --env-file=.env.local scripts/verificar-fase2.mjs",
     "teste-escrita": "node --env-file=.env.local scripts/teste-escrita.mjs",
+    "dev:api": "node --env-file=.env.local scripts/dev-api.mjs",
     "medir": "node --env-file=.env.local scripts/medir-omie.mjs",
     "migrar": "node --env-file=.env scripts/migrar-supabase-para-neon.mjs"
   },
