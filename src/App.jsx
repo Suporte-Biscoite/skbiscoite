@@ -123,6 +123,7 @@ function App() {
 
   useEffect(() => {
     if (modo === 'usuarios' && abaGestao === 'lista') carregarUsuarios();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega só ao trocar de tela
   }, [modo, abaGestao]);
 
   const salvarEdicaoUsuario = async (e) => {
@@ -246,6 +247,7 @@ function App() {
 
   useEffect(() => {
     if (modo === 'historico') carregarHistorico();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega só ao trocar de tela
   }, [modo]);
 
   // ================= TELA DE LOGIN =================

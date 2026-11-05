@@ -45,6 +45,7 @@
 /* ---------- Planilha ---------- */
 .cad-soltar { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; text-align: center; padding: 2rem 1rem; border: 2px dashed var(--border-cream); border-radius: var(--radius-md); background: var(--bg-vanilla); cursor: pointer; transition: border-color 0.2s, background 0.2s; }
 .cad-soltar:hover, .cad-soltar:focus-within { border-color: var(--brand-gold); background: #fff; }
+.cad-soltar--sobre { border-color: var(--brand-gold); background: #fff; transform: scale(1.01); }
 .cad-soltar input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .cad-soltar span { color: var(--text-mocha); font-size: 0.85rem; max-width: 46ch; }
 

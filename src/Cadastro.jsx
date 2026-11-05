@@ -56,10 +56,20 @@ export default function Cadastro({ modo, api, exibirToast }) {
   const [sincronizacao, setSincronizacao] = useState(null); // { pagina, total } enquanto carrega o catálogo
   const [exec, setExec] = useState(null); // { loteId, itens, rodando, concluido }
   const [erroTela, setErroTela] = useState('');
+  const [arrastando, setArrastando] = useState(false);
   const vivo = useRef(true);
   const versaoValidacao = useRef(0);
 
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
+
+  // Avisa antes de fechar a aba se há trabalho em andamento ou lista ainda não enviada.
+  const emAndamento = !!exec?.rodando || (!exec && itens.length > 0);
+  useEffect(() => {
+    if (!emAndamento) return undefined;
+    const avisar = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [emAndamento]);
 
   const carregarFamilias = useCallback(async () => {
     setFamilias((f) => ({ ...f, carregando: true, erro: '' }));
@@ -156,7 +166,18 @@ export default function Cadastro({ modo, api, exibirToast }) {
   const lerPlanilha = async (e) => {
     const arquivo = e.target.files[0];
     e.target.value = ''; // permite escolher o mesmo arquivo de novo depois de corrigir
+    return processarArquivo(arquivo);
+  };
+
+  const soltarPlanilha = (e) => {
+    e.preventDefault();
+    setArrastando(false);
+    return processarArquivo(e.dataTransfer.files[0]);
+  };
+
+  const processarArquivo = async (arquivo) => {
     if (!arquivo) return;
+    if (!/.xlsx?$/i.test(arquivo.name)) return exibirToast('Envie um arquivo .xlsx (use o modelo).', 'erro');
     try {
       const XLSX = await import('xlsx');
       const livro = XLSX.read(new Uint8Array(await arquivo.arrayBuffer()), { type: 'array' });
@@ -231,6 +252,8 @@ export default function Cadastro({ modo, api, exibirToast }) {
     const texto = exec.itens.filter((i) => i.codigo).map((i) => `${i.codigo}\t${i.descricao}`).join('\n');
     try { await navigator.clipboard.writeText(texto); exibirToast('Códigos copiados.'); } catch { exibirToast('Não consegui copiar.', 'erro'); }
   };
+
+  const removerComProblema = () => setItens((lista) => lista.filter((i) => !(erros[i.uid] || []).length));
 
   const novoCadastro = () => { setExec(null); setErros({}); };
 
@@ -329,9 +352,9 @@ export default function Cadastro({ modo, api, exibirToast }) {
                 <h3 className="brand-font">Importar planilha</h3>
                 <button type="button" className="b-btn-ghost" onClick={baixarModelo}>Baixar modelo</button>
               </div>
-              <label className="cad-soltar">
+              <label className={`cad-soltar ${arrastando ? 'cad-soltar--sobre' : ''}`} onDragOver={(e) => { e.preventDefault(); setArrastando(true); }} onDragLeave={() => setArrastando(false)} onDrop={soltarPlanilha}>
                 <input type="file" accept=".xlsx,.xls" onChange={lerPlanilha} />
-                <strong>Escolha a planilha preenchida (.xlsx)</strong>
+                <strong>Escolha ou arraste a planilha preenchida (.xlsx)</strong>
                 <span>Colunas: FAMILIA, DESCRICAO, NCM, ENTRA NA LOJA (Sim/Não) e, se for sazonal, SAZONAL (Sim) + FAMILIA SAZONAL.</span>
               </label>
             </>
@@ -376,7 +399,7 @@ export default function Cadastro({ modo, api, exibirToast }) {
 
           {itens.length > 0 && (
             <div className="cad-rodape">
-              <span aria-live="polite">{validando ? 'Conferindo…' : totalErros ? `${totalErros} item(ns) com problema (não serão enviados)` : 'Tudo conferido.'}</span>
+              <span aria-live="polite">{validando ? 'Conferindo…' : totalErros ? `${totalErros} item(ns) com problema (não serão enviados)` : 'Tudo conferido.'}{!validando && totalErros > 0 && <> <button type="button" className="cad-link" onClick={removerComProblema}>Remover da lista</button></>}</span>
               <button type="button" className="b-btn" onClick={cadastrar} disabled={validando || itens.length === totalErros}>
                 Cadastrar {itens.length - totalErros} produto{itens.length - totalErros === 1 ? '' : 's'}
               </button>
