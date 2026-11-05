@@ -1,14 +1,16 @@
+// categoriaNexaas = nome da categoria no Nexaas. É igual à família do Omie, exceto 300 (REVENDA),
+// que no Nexaas entra como PRODUTOS PRONTOS.
 // Fonte única da verdade: prefixo do SKU <-> grupo <-> família cadastrada no Omie.
 // O texto de `familia` precisa ser IGUAL ao nome da família no Omie
 // (Cadastros > Produtos e Serviços > Famílias de Produtos).
 export const FAMILIAS = [
-  { prefixo: '1010', grupo: 'ENVASE',      familia: 'INSUMOS PARA ENVASE' },
-  { prefixo: '200',  grupo: 'EMBALAGEM',   familia: 'EMBALAGEM' },
-  { prefixo: '300',  grupo: 'EXTERNO',     familia: 'PRODUTOS PARA REVENDA' },
-  { prefixo: '400',  grupo: 'INTERNO',     familia: 'PRODUTOS PRONTOS' },
-  { prefixo: '500',  grupo: 'KITS',        familia: 'CESTAS/KIT' },
-  { prefixo: '700',  grupo: 'SUPRIMENTOS', familia: 'SUPRIMENTOS' },
-  { prefixo: '800',  grupo: 'ATIVOS',      familia: 'ATIVO' },
+  { prefixo: '1010', grupo: 'ENVASE',      familia: 'INSUMOS PARA ENVASE', categoriaNexaas: 'INSUMOS PARA ENVASE' },
+  { prefixo: '200',  grupo: 'EMBALAGEM',   familia: 'EMBALAGEM', categoriaNexaas: 'EMBALAGEM' },
+  { prefixo: '300',  grupo: 'EXTERNO',     familia: 'PRODUTOS PARA REVENDA', categoriaNexaas: 'PRODUTOS PRONTOS' },
+  { prefixo: '400',  grupo: 'INTERNO',     familia: 'PRODUTOS PRONTOS', categoriaNexaas: 'PRODUTOS PRONTOS' },
+  { prefixo: '500',  grupo: 'KITS',        familia: 'CESTAS/KIT', categoriaNexaas: 'CESTAS/KIT' },
+  { prefixo: '700',  grupo: 'SUPRIMENTOS', familia: 'SUPRIMENTOS', categoriaNexaas: 'SUPRIMENTOS' },
+  { prefixo: '800',  grupo: 'ATIVOS',      familia: 'ATIVO', categoriaNexaas: 'ATIVO' },
 ];
 
 // Maiúsculas, sem acento, sem espaço sobrando ("CESTAS / KIT" == "CESTAS/KIT").

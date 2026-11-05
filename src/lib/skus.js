@@ -89,10 +89,13 @@ const ALIAS_COLUNAS = {
   familia: ['FAMILIA', 'CATEGORIA', 'FAMILIA DO PRODUTO'],
   descricao: ['DESCRICAO', 'DESCRICAO DO PRODUTO'],
   ncm: ['NCM'],
+  entraNaLoja: ['ENTRA NA LOJA', 'ENTRA_NA_LOJA', 'LOJA'],
+  sazonal: ['SAZONAL', 'E SAZONAL'],
+  familiaSazonal: ['FAMILIA SAZONAL', 'SAZONALIDADE'],
 };
 
 // Excel tira o zero à esquerda de NCM numérico (04061010 vira 4061010).
-const normalizarNcm = (valor) => {
+export const normalizarNcm = (valor) => {
   const digitos = String(valor ?? '').replace(/\D/g, '');
   return digitos.length === 7 ? digitos.padStart(8, '0') : digitos;
 };
@@ -108,6 +111,10 @@ export function lerLinhasDaPlanilha(matriz, primeiraLinha = 1) {
     const colDescricao = achar(cabecalho, ALIAS_COLUNAS.descricao);
     if (colFamilia === -1 || colDescricao === -1) continue;
     const colNcm = achar(cabecalho, ALIAS_COLUNAS.ncm);
+    const colLoja = achar(cabecalho, ALIAS_COLUNAS.entraNaLoja);
+    const colSazonal = achar(cabecalho, ALIAS_COLUNAS.sazonal);
+    const colFamSazonal = achar(cabecalho, ALIAS_COLUNAS.familiaSazonal);
+    const texto = (colunas, col) => (col >= 0 ? String(colunas[col] ?? '').trim() : '');
 
     return matriz
       .slice(i + 1)
@@ -116,6 +123,9 @@ export function lerLinhasDaPlanilha(matriz, primeiraLinha = 1) {
         familia: String(colunas[colFamilia] ?? '').trim(),
         descricao: String(colunas[colDescricao] ?? '').trim(),
         ncm: colNcm >= 0 ? normalizarNcm(colunas[colNcm]) : '',
+        entraNaLoja: texto(colunas, colLoja),
+        sazonal: texto(colunas, colSazonal),
+        familiaSazonal: texto(colunas, colFamSazonal),
       }))
       .filter((l) => l.familia || l.descricao || l.ncm);
   }
