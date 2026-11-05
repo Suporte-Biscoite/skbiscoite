@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "test": "node --test src/lib/skus.test.js src/lib/modeloPlanilha.test.js src/lib/regras.test.js",
     "preview": "vite preview",
+    "verificar": "node --env-file=.env.local scripts/verificar-fase2.mjs",
+    "teste-escrita": "node --env-file=.env.local scripts/teste-escrita.mjs",
     "medir": "node --env-file=.env.local scripts/medir-omie.mjs",
     "migrar": "node --env-file=.env scripts/migrar-supabase-para-neon.mjs"
   },
