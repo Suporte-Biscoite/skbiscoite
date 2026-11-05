@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/sincronizar.js": { "maxDuration": 60 },
+    "api/lotes.js": { "maxDuration": 60 }
+  }
+}

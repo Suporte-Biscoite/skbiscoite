@@ -321,3 +321,17 @@ h1, h2, h3, .brand-font {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* --- Telas pequenas: o menu lateral vira uma faixa no topo --- */
+@media (max-width: 900px) {
+  .app-container { flex-direction: column; }
+  .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 1rem; border-right: 0; border-bottom: 1px solid var(--border-cream); }
+  .sidebar nav { flex-direction: row !important; flex-wrap: wrap; margin-top: 0 !important; flex: 1 1 100%; order: 3; }
+  .sidebar nav button { width: auto !important; padding: 0.6rem 0.9rem !important; min-height: 44px; }
+  .sidebar > div:last-child { margin: 0 0 0 auto !important; border: 0 !important; padding: 0 !important; }
+  .main-content { padding: 1.25rem 1rem; }
+  .top-header { flex-wrap: wrap; gap: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

@@ -26,4 +26,9 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  {
+    // Servidor (Vercel) e scripts rodam em Node, não no navegador.
+    files: ['api/**/*.js', 'scripts/**/*.{js,mjs}', 'src/**/*.test.js'],
+    languageOptions: { globals: globals.node },
+  },
 ])
