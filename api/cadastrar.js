@@ -18,12 +18,15 @@ async function buscarCodigoFamilia(nomeFamilia, auth) {
     let totalPaginas = 1;
     do {
       const { data } = await axios.post(`${OMIE_URL}/familias/`, {
-        call: 'ListarFamilias',
+        call: 'PesquisarFamilias',
         ...auth,
         param: [{ pagina, registros_por_pagina: 100 }]
       });
       (data.famCadastro || []).forEach(f => {
-        if (f.nomeFamilia && f.codigo) mapa[normalizar(f.nomeFamilia)] = f.codigo;
+        if (!f.nomeFamilia || !f.codigo || f.inativo === 'S') return;
+        const chave = normalizar(f.nomeFamilia);
+        // Nome repetido no Omie = ambíguo: não escolhemos família por palpite.
+        mapa[chave] = chave in mapa ? null : f.codigo;
       });
       totalPaginas = data.total_de_paginas || 1;
       pagina++;
@@ -49,14 +52,17 @@ export default async function handler(req, res) {
   const omieCall = acao || "IncluirProduto";
   const auth = { app_key: APP_KEY, app_secret: APP_SECRET };
 
-  // Resolve o código da família no Omie pelo nome. Se não achar, cadastra mesmo assim
-  // (só com o nome) e avisa o front para o usuário conferir.
+  // Resolve o código da família no Omie pelo nome. Sem família, NÃO cadastra:
+  // criar produto incompleto obrigava a corrigir à mão depois.
   let codigoFamilia = null;
   try {
     codigoFamilia = await buscarCodigoFamilia(familia, auth);
-    if (familia && !codigoFamilia) console.warn(`Família "${familia}" não encontrada no Omie.`);
   } catch (err) {
-    console.warn('Não foi possível listar as famílias do Omie:', err.response?.data?.faultstring || err.message);
+    console.error('Não foi possível listar as famílias do Omie:', err.response?.data?.faultstring || err.message);
+    return res.status(502).json({ error: 'Não consegui consultar as famílias no Omie. Tente de novo em instantes.' });
+  }
+  if (!codigoFamilia) {
+    return res.status(422).json({ error: `Família "${familia}" não encontrada (ou repetida) no Omie. O produto NÃO foi criado.` });
   }
 
   const produto = {
