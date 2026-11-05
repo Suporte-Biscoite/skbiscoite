@@ -123,8 +123,9 @@ export function montarProdutoNexaas(item, codigo, cfg) {
       ncm: item.ncm,
       origin: ORIGEM,
       product_purpose: 'resale_third_party_product', // Revenda - produção de terceiros
-      // Variação (SKU): código igual ao interno, sem EAN, ativa
-      product_skus: [{ code: codigo, active: true }],
+      // Variação (SKU): código (e código fiscal) iguais ao interno, sem EAN, ativa
+      // O Nexaas exige código fiscal e descrição no SKU: usamos o código e o nome do produto.
+      product_skus: [{ code: codigo, fiscal_code: codigo, description: item.descricao.toUpperCase(), active: true }],
     },
   };
 }

@@ -72,7 +72,7 @@ test('Nexaas, entra na loja: todos os canais + on-line e off-line + categoria da
   assert.equal(product.measure, 'UN');
   assert.equal(product.origin, 0);
   assert.equal(product.product_purpose, 'resale_third_party_product');
-  assert.deepEqual(product.product_skus, [{ code: '4000001', active: true }]);
+  assert.deepEqual(product.product_skus, [{ code: '4000001', fiscal_code: '4000001', description: 'BISCOITO DE TESTE', active: true }]);
 });
 
 test('Nexaas, fora da loja: só ESTOQUE + só off-line (sempre juntos)', () => {

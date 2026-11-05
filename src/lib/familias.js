@@ -8,7 +8,7 @@ export const FAMILIAS = [
   { prefixo: '200',  grupo: 'EMBALAGEM',   familia: 'EMBALAGEM', categoriaNexaas: 'EMBALAGEM' },
   { prefixo: '300',  grupo: 'EXTERNO',     familia: 'PRODUTOS PARA REVENDA', categoriaNexaas: 'PRODUTOS PRONTOS' },
   { prefixo: '400',  grupo: 'INTERNO',     familia: 'PRODUTOS PRONTOS', categoriaNexaas: 'PRODUTOS PRONTOS' },
-  { prefixo: '500',  grupo: 'KITS',        familia: 'CESTAS/KIT', categoriaNexaas: 'CESTAS/KIT' },
+  { prefixo: '500',  grupo: 'KITS',        familia: 'CESTAS/KIT', categoriaNexaas: 'CESTA/KIT' }, // no Nexaas a categoria é "CESTA/KIT" (singular)
   { prefixo: '700',  grupo: 'SUPRIMENTOS', familia: 'SUPRIMENTOS', categoriaNexaas: 'SUPRIMENTOS' },
   { prefixo: '800',  grupo: 'ATIVOS',      familia: 'ATIVO', categoriaNexaas: 'ATIVO' },
 ];
