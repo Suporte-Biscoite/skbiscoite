@@ -1,12 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
-import { FAMILIAS, resolverFamilia, obterFamiliaPorPrefixo, normalizarTexto } from './lib/familias.js';
-import { cadastrarComVaga as cadastrarComVagaNoOmie, lerLinhasDaPlanilha } from './lib/skus.js';
-import { montarModeloPlanilha } from './lib/modeloPlanilha.js';
+import React, { useState, useEffect, useCallback } from 'react';
+import Cadastro from './Cadastro.jsx';
 import './App.css';
-
-const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
 // O navegador não acessa o banco: tudo passa pelas rotas em /api, que conferem a sessão.
@@ -96,17 +90,8 @@ function App() {
 
   // ================= ESTADOS CORE =================
   const [modo, setModo] = useState('individual'); 
-  const [formInd, setFormInd] = useState({ categoria: '200', descricao: '', ncm: '' });
-  const [procInd, setProcInd] = useState(false);
-  const [skuGerado, setSkuGerado] = useState(null);
-  const [erroInd, setErroInd] = useState(null);
-
-  const [dadosPlanilha, setDadosPlanilha] = useState([]);
-  const [procMassa, setProcMassa] = useState(false);
-  const [logsMassa, setLogsMassa] = useState([]);
-  const [resumoMassa, setResumoMassa] = useState(null);
-
   const [historico, setHistorico] = useState([]);
+  const [cadastrosRecentes, setCadastrosRecentes] = useState([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
   // ================= ÍCONES SVG =================
@@ -125,7 +110,8 @@ function App() {
   };
 
   // ================= LÓGICA DE USUÁRIOS =================
-  const api = (caminho, opcoes = {}) => chamarApi(caminho, { ...opcoes, token: usuarioLogado?.token });
+  const token = usuarioLogado?.token;
+  const api = useCallback((caminho, opcoes = {}) => chamarApi(caminho, { ...opcoes, token }), [token]);
 
   const carregarUsuarios = async () => {
     try {
@@ -155,7 +141,7 @@ function App() {
       exibirToast(`Dados de ${usuarioEditando.nome} atualizados.`, 'sucesso');
       setUsuarioEditando(null);
       carregarUsuarios();
-    } catch (err) {
+    } catch {
       exibirToast('Erro ao atualizar usuário.', 'erro');
     } finally {
       setCarregandoModal(false);
@@ -175,7 +161,7 @@ function App() {
           } else {
             exibirToast(`Senha de ${usuarioEditando.nome} alterada para: ${resultado.senha}`, 'sucesso');
           }
-        } catch (err) {
+        } catch {
           exibirToast('Erro ao acessar o banco de dados.', 'erro');
         } finally {
           setCarregandoModal(false);
@@ -244,16 +230,13 @@ function App() {
     }
   };
 
-  // ================= LÓGICA DE HISTÓRICO E OMIE =================
-  const registrarHistorico = async (sku, descricao) => {
-    if (!usuarioLogado) return;
-    await api('/api/historico', { metodo: 'POST', corpo: { sku, descricao } });
-  };
-
+  // ================= LÓGICA DE HISTÓRICO =================
   const carregarHistorico = async () => {
     setCarregandoHistorico(true);
     try {
-      setHistorico(await api('/api/historico'));
+      const [antigo, recentes] = await Promise.all([api('/api/historico'), api('/api/lotes').catch(() => [])]);
+      setHistorico(antigo);
+      setCadastrosRecentes(recentes);
     } catch (err) {
       exibirToast(err.message, 'erro');
     } finally {
@@ -264,155 +247,6 @@ function App() {
   useEffect(() => {
     if (modo === 'historico') carregarHistorico();
   }, [modo]);
-
-  // Lê UMA página do Omie. Tenta de novo se falhar e, se não conseguir, interrompe tudo:
-  // seguir com a lista incompleta faz o gerador propor códigos que já existem.
-  const buscarPaginaOmie = async (pagina) => {
-    const maxTentativas = 4;
-    for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
-      try {
-        const res = await fetch(`/api/codigos?pagina=${pagina}`, { headers: { Authorization: `Bearer ${usuarioLogado?.token}` } });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && Array.isArray(data.produtos)) return data;
-        throw new Error(data.error || `HTTP ${res.status}`);
-      } catch (err) {
-        if (tentativa === maxTentativas) throw new Error(`Falha ao ler a página ${pagina} do Omie: ${err.message}`);
-        await pausa(1000 * tentativa);
-      }
-    }
-  };
-
-  // Páginas uma de cada vez (em paralelo o Omie recusa e a lista vinha incompleta).
-  const buscarTodosProdutosOmie = async () => {
-    const primeira = await buscarPaginaOmie(1);
-    let produtos = [...primeira.produtos];
-    const totalPaginas = primeira.total_paginas || 1;
-    for (let p = 2; p <= totalPaginas; p++) {
-      const pagina = await buscarPaginaOmie(p);
-      produtos = produtos.concat(pagina.produtos);
-    }
-    return produtos;
-  };
-
-  const cadastrarNoOmie = async ({ codigo, descricao, ncm, acao, familia, codigo_produto }) => {
-    const ncmFormatado = ncm && ncm.toString().trim() !== '' ? ncm.toString().trim() : '1905.90.20';
-    const res = await fetch('/api/cadastrar', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usuarioLogado?.token}` },
-      body: JSON.stringify({
-        codigo,
-        descricao,
-        preco: 0,
-        ncm: ncmFormatado,
-        acao,
-        familia, // nome da família no Omie (ex: PRODUTOS PRONTOS)
-        codigo_produto // só usado quando reaproveita um código em stand-by
-      })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Erro no Omie.');
-    return data;
-  };
-
-  const cadastrarComVaga = (params) => cadastrarComVagaNoOmie(cadastrarNoOmie, params);
-
-  const handleChangeInd = (e) => {
-    let val = e.target.value.toUpperCase();
-    if (e.target.name === 'ncm') val = val.replace(/\D/g, '');
-    setFormInd({ ...formInd, [e.target.name]: val });
-  };
-
-  const gerarECadastrarIndividual = async (e) => {
-    e.preventDefault();
-    setProcInd(true); setSkuGerado(null); setErroInd(null);
-    try {
-      const descFormatada = formInd.descricao.trim();
-      const familia = obterFamiliaPorPrefixo(formInd.categoria);
-      if (!familia) throw new Error('Selecione a família do produto.');
-
-      const produtos = await buscarTodosProdutosOmie();
-      const nomeNormalizado = normalizarTexto(descFormatada);
-      if (produtos.some(prod => normalizarTexto(prod.descricao) === nomeNormalizado)) throw new Error(`Já existe um produto com este nome.`);
-
-      const resultado = await cadastrarComVaga({ produtos, ocupados: new Set(), familia, descricao: descFormatada, ncm: formInd.ncm });
-
-      setSkuGerado(resultado.codigo);
-      // O SKU já foi criado no Omie: uma falha no histórico não pode virar erro na tela.
-      await registrarHistorico(resultado.codigo, descFormatada).catch((err) => console.error("Histórico não gravado:", err));
-      setFormInd({ categoria: formInd.categoria, descricao: '', ncm: '' });
-    } catch (err) { setErroInd(err.message); } finally { setProcInd(false); }
-  };
-
-  const baixarPlanilhaModelo = async () => {
-    const workbook = montarModeloPlanilha(ExcelJS);
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Modelo_SKUs.xlsx'; anchor.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const lerArquivoUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        const aba = workbook.Sheets[workbook.SheetNames[0]];
-        const matriz = XLSX.utils.sheet_to_json(aba, { header: 1, defval: '' });
-        const primeiraLinha = aba['!ref'] ? XLSX.utils.decode_range(aba['!ref']).s.r + 1 : 1;
-        const linhas = lerLinhasDaPlanilha(matriz, primeiraLinha);
-        if (linhas.length === 0) exibirToast('Nenhuma linha preenchida na planilha.', 'erro');
-        setDadosPlanilha(linhas);
-      } catch (err) {
-        setDadosPlanilha([]);
-        exibirToast(err.message, 'erro');
-      }
-      setLogsMassa([]); setResumoMassa(null);
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois de corrigir
-  };
-
-  const processarEmMassa = async () => {
-    if (dadosPlanilha.length === 0) return exibirToast("Envie uma planilha válida.", "erro");
-    setProcMassa(true); setLogsMassa([]); setResumoMassa(null);
-
-    const registrar = (item) => setLogsMassa(prev => [...prev, item]);
-    let criados = 0; let erros = 0;
-
-    try {
-      const produtos = await buscarTodosProdutosOmie();
-      const ocupados = new Set();
-      const descricoesExistentes = new Set(produtos.map(p => normalizarTexto(p.descricao)).filter(Boolean));
-
-      for (const linha of dadosPlanilha) {
-        const rotulo = `Linha ${linha.linha}`;
-        const descStr = linha.descricao.toUpperCase().trim();
-
-        if (!linha.familia || !descStr) { erros++; registrar({ status: 'Erro', msg: `${rotulo}: faltam dados (família e descrição são obrigatórias).` }); continue; }
-
-        const familia = resolverFamilia(linha.familia);
-        if (!familia) { erros++; registrar({ status: 'Erro', desc: descStr, msg: `${rotulo}: família não reconhecida (${linha.familia}). Use uma da lista do modelo.` }); continue; }
-
-        if (descricoesExistentes.has(normalizarTexto(descStr))) { erros++; registrar({ status: 'Erro', desc: descStr, msg: `${rotulo}: já existe no Omie (ou está repetido na planilha).` }); continue; }
-
-        try {
-          const resultado = await cadastrarComVaga({ produtos, ocupados, familia, descricao: descStr, ncm: linha.ncm });
-          descricoesExistentes.add(normalizarTexto(descStr));
-          criados++;
-          const avisoFamilia = resultado.resp.familia_id ? '' : 'família não vinculada no Omie, confira o cadastro';
-          registrar({ sku: resultado.codigo, desc: descStr, msg: avisoFamilia, status: resultado.acao === 'AlterarProduto' ? 'Sucesso (Sobrescrito)' : 'Sucesso' });
-          await registrarHistorico(resultado.codigo, descStr).catch(() => {});
-        } catch (err) {
-          erros++;
-          registrar({ sku: err.codigo, desc: descStr, status: 'Erro', msg: `${rotulo}: ${err.message}` });
-        }
-
-        await pausa(350); // respeita o limite de chamadas do Omie
-      }
-    } catch (err) { exibirToast(`Erro crítico na importação: ${err.message}`, "erro"); } finally { setResumoMassa({ criados, erros }); setProcMassa(false); setDadosPlanilha([]); }
-  };
 
   // ================= TELA DE LOGIN =================
   if (!usuarioLogado) {
@@ -538,11 +372,11 @@ function App() {
           <div>
             <h1 className="brand-font">
               {modo === 'individual' && 'Novo SKU'}
-              {modo === 'massa' && 'Processamento em Lote'}
+              {modo === 'massa' && 'Importação em Lote'}
               {modo === 'usuarios' && 'Gestão de Equipe'}
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
-            <p>Conectado ao ambiente corporativo Omie ERP.</p>
+            <p>Cadastro integrado: Omie ERP e Nexaas OMS.</p>
           </div>
           
           <div className="user-profile-widget">
@@ -554,89 +388,7 @@ function App() {
           </div>
         </header>
 
-        {modo === 'individual' && (
-          <div className="b-card fade-in">
-            <h3 className="brand-font" style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Novo Produto (Individual)</h3>
-            {erroInd && <div style={{ background: '#FEF2F2', color: '#D9534F', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem', fontSize: '0.9rem', fontWeight: '500' }}>{erroInd}</div>}
-
-            <form onSubmit={gerarECadastrarIndividual}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '1.5rem' }}>
-                <div className="b-input-group">
-                  <label>Família do Produto</label>
-                  <select name="categoria" className="b-input" value={formInd.categoria} onChange={handleChangeInd} required>
-                    <option value="">Selecione...</option>
-                    {FAMILIAS.map(f => (
-                      <option key={f.prefixo} value={f.prefixo}>{f.familia} ({f.prefixo} · {f.grupo})</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="b-input-group">
-                  <label>Descrição do Produto</label>
-                  <input type="text" name="descricao" className="b-input" placeholder="Ex: LATA MASCARPONE 200G" value={formInd.descricao} onChange={handleChangeInd} required />
-                </div>
-
-                <div className="b-input-group">
-                  <label>NCM (Apenas Números)</label>
-                  <input type="text" name="ncm" className="b-input" placeholder="19059020" value={formInd.ncm} onChange={handleChangeInd} />
-                </div>
-              </div>
-              <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="submit" disabled={procInd} className="b-btn">{procInd ? 'Processando...' : 'Gerar e Sincronizar'}</button>
-              </div>
-            </form>
-
-            {skuGerado && (
-              <div style={{ marginTop: '2rem', padding: '2rem', background: 'var(--bg-vanilla)', border: '1px dashed var(--brand-gold)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', fontWeight: 600 }}>CÓDIGO GERADO COM SUCESSO</span>
-                <h1 style={{ color: 'var(--brand-gold)', fontSize: '2.5rem', marginTop: '0.5rem' }}>{skuGerado}</h1>
-              </div>
-            )}
-          </div>
-        )}
-
-        {modo === 'massa' && (
-          <div className="b-card fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Importação via Excel</h3>
-              <button onClick={baixarPlanilhaModelo} className="b-btn-ghost">Baixar Planilha Modelo</button>
-            </div>
-            
-            <div style={{ border: '2px dashed var(--border-cream)', padding: '3rem', textAlign: 'center', borderRadius: 'var(--radius-md)', marginBottom: '2rem', background: 'var(--bg-vanilla)' }}>
-              <p style={{ fontWeight: '500', marginBottom: '1rem' }}>Anexe sua planilha .xlsx preenchida aqui</p>
-              <label className="b-btn" style={{ cursor: 'pointer' }}>Selecionar Arquivo<input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={lerArquivoUpload} /></label>
-            </div>
-
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-mocha)', marginBottom: '1.5rem' }}>
-              Colunas: FAMILIA (escolha na lista: {FAMILIAS.map(f => f.familia).join(' · ')}), DESCRICAO e NCM. O código do SKU é gerado automaticamente pela família.
-            </p>
-
-            {dadosPlanilha.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
-                <button onClick={processarEmMassa} disabled={procMassa} className="b-btn">{procMassa ? `Processando ${dadosPlanilha.length} linhas...` : `Iniciar Importação (${dadosPlanilha.length} itens)`}</button>
-              </div>
-            )}
-
-            {resumoMassa && (
-              <div style={{ marginBottom: '1rem', fontWeight: '600', color: resumoMassa.erros > 0 ? 'var(--danger-terracotta)' : 'var(--success-pistachio)' }}>
-                {resumoMassa.criados} cadastrado(s) · {resumoMassa.erros} com erro
-              </div>
-            )}
-
-            {logsMassa.length > 0 && (
-              <div className="b-input-group">
-                <label>Console de Logs</label>
-                <div style={{ background: 'var(--bg-vanilla)', border: '1px solid var(--border-cream)', padding: '1rem', borderRadius: 'var(--radius-sm)', minHeight: '150px', maxHeight: '250px', overflowY: 'auto', fontSize: '0.9rem' }}>
-                  {logsMassa.map((log, i) => (
-                    <div key={i} style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-cream)', color: log.status.includes('Sucesso') ? 'var(--success-pistachio)' : 'var(--danger-terracotta)', fontWeight: '500' }}>
-                      <strong>{log.sku || 'Aviso'}</strong> - {[log.desc, log.msg].filter(Boolean).join(' — ')}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {(modo === 'individual' || modo === 'massa') && <Cadastro modo={modo} api={api} exibirToast={exibirToast} />}
 
         {modo === 'usuarios' && ehTI && (
           <div className="b-card fade-in">
@@ -732,36 +484,51 @@ function App() {
         )}
 
         {modo === 'historico' && ehTI && (
-          <div className="b-card fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 className="brand-font" style={{ fontSize: '1.4rem' }}>Auditoria Global (Supabase)</h3>
+          <>
+            <div className="b-card fade-in" style={{ marginBottom: '1.25rem' }}>
+              <h3 className="brand-font" style={{ fontSize: '1.4rem', marginBottom: '1.5rem' }}>Cadastros (Omie → Nexaas)</h3>
+              <div className="b-table-wrapper">
+                <table className="b-table">
+                  <thead><tr><th>Código</th><th>Produto</th><th>Família</th><th>Omie</th><th>Nexaas</th><th>Quem</th><th>Quando</th></tr></thead>
+                  <tbody>
+                    {carregandoHistorico ? <tr><td colSpan="7" style={{ textAlign: 'center' }}>Carregando dados...</td></tr> :
+                      cadastrosRecentes.length === 0 ? <tr><td colSpan="7" style={{ textAlign: 'center' }}>Nenhum cadastro novo ainda.</td></tr> :
+                      cadastrosRecentes.map(c => (
+                        <tr key={c.id}>
+                          <td style={{ fontWeight: '600', color: 'var(--brand-gold)' }}>{c.codigo || '—'}</td>
+                          <td>{c.descricao}</td>
+                          <td>{c.familia_omie}</td>
+                          <td title={c.omie_erro || ''}>{c.omie_status === 'ok' ? '✓ ok' : c.omie_status === 'erro' ? '✗ erro' : c.omie_status}</td>
+                          <td title={c.nexaas_erro || ''}>{c.nexaas_status === 'ok' ? '✓ ok' : c.nexaas_status === 'erro' ? '✗ erro' : c.nexaas_status}</td>
+                          <td>{c.usuario_email}</td>
+                          <td style={{ color: 'var(--text-mocha)', fontSize: '0.85rem' }}>{new Date(c.criado_em).toLocaleString('pt-BR')}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            
-            <div className="b-table-wrapper">
-              <table className="b-table">
-                <thead>
-                  <tr>
-                    <th>SKU Gerado</th>
-                    <th>Descrição Registrada</th>
-                    <th>Usuário (Responsável)</th>
-                    <th>Data</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {carregandoHistorico ? <tr><td colSpan="4" style={{ textAlign: 'center' }}>Carregando dados...</td></tr> : 
-                    historico.length === 0 ? <tr><td colSpan="4" style={{ textAlign: 'center' }}>Nenhum registro encontrado.</td></tr> :
-                    historico.map(log => (
-                    <tr key={log.id}>
-                      <td style={{ fontWeight: '600', color: 'var(--brand-gold)' }}>{log.sku}</td>
-                      <td>{log.descricao}</td>
-                      <td>{log.email_usuario}</td>
-                      <td style={{ color: 'var(--text-mocha)', fontSize: '0.85rem' }}>{new Date(log.criado_em).toLocaleDateString('pt-BR')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="b-card fade-in">
+              <h3 className="brand-font" style={{ fontSize: '1.4rem', marginBottom: '1.5rem' }}>Registros anteriores</h3>
+              <div className="b-table-wrapper">
+                <table className="b-table">
+                  <thead><tr><th>SKU Gerado</th><th>Descrição Registrada</th><th>Usuário (Responsável)</th><th>Data</th></tr></thead>
+                  <tbody>
+                    {carregandoHistorico ? <tr><td colSpan="4" style={{ textAlign: 'center' }}>Carregando dados...</td></tr> :
+                      historico.length === 0 ? <tr><td colSpan="4" style={{ textAlign: 'center' }}>Nenhum registro encontrado.</td></tr> :
+                      historico.map(log => (
+                        <tr key={log.id}>
+                          <td style={{ fontWeight: '600', color: 'var(--brand-gold)' }}>{log.sku}</td>
+                          <td>{log.descricao}</td>
+                          <td>{log.email_usuario}</td>
+                          <td style={{ color: 'var(--text-mocha)', fontSize: '0.85rem' }}>{new Date(log.criado_em).toLocaleDateString('pt-BR')}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          </>
         )}
       </main>
 
