@@ -128,13 +128,26 @@ test('planilha: acha o cabeçalho, aceita acento e CATEGORIA antiga, numera as l
     [400, 'BISCOITO COCO', 4061010],
   ];
   const linhas = lerLinhasDaPlanilha(matriz);
+  const semLoja = { entraNaLoja: '', sazonal: '', familiaSazonal: '' }; // colunas ausentes na planilha antiga
   assert.deepEqual(linhas, [
-    { linha: 5, familia: 'PRODUTOS PRONTOS', descricao: 'BISCOITO GOIABA', ncm: '19059020' },
-    { linha: 7, familia: '400', descricao: 'BISCOITO COCO', ncm: '04061010' },
+    { linha: 5, familia: 'PRODUTOS PRONTOS', descricao: 'BISCOITO GOIABA', ncm: '19059020', ...semLoja },
+    { linha: 7, familia: '400', descricao: 'BISCOITO COCO', ncm: '04061010', ...semLoja },
   ]);
 
   const antiga = [['CATEGORIA', 'DESCRICAO', 'NCM'], ['400', 'X', '']];
   assert.equal(lerLinhasDaPlanilha(antiga)[0].familia, '400');
+});
+
+test('planilha nova: lê ENTRA NA LOJA, SAZONAL e FAMILIA SAZONAL', () => {
+  const matriz = [['FAMILIA', 'DESCRICAO', 'NCM', 'ENTRA NA LOJA', 'SAZONAL', 'FAMILIA SAZONAL'], ['400', 'X', '19059020', 'Sim', 'Sim', 'NATAL']];
+  const [l] = lerLinhasDaPlanilha(matriz);
+  assert.deepEqual([l.entraNaLoja, l.sazonal, l.familiaSazonal], ['Sim', 'Sim', 'NATAL']);
+});
+
+test('planilha nova: lê ENTRA NA LOJA, SAZONAL e FAMILIA SAZONAL', () => {
+  const matriz = [['FAMILIA', 'DESCRICAO', 'NCM', 'ENTRA NA LOJA', 'SAZONAL', 'FAMILIA SAZONAL'], ['400', 'X', '19059020', 'Sim', 'Sim', 'NATAL']];
+  const [l] = lerLinhasDaPlanilha(matriz);
+  assert.deepEqual([l.entraNaLoja, l.sazonal, l.familiaSazonal], ['Sim', 'Sim', 'NATAL']);
 });
 
 test('planilha sem cabeçalho reconhecível dá erro claro', () => {
