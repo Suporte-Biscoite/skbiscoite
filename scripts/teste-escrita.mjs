@@ -1,4 +1,4 @@
-// ESCREVE em produção (Omie + Nexaas + Neon): cria 2 produtos claramente marcados como TESTE.
+// ESCREVE em produção (Omie + Nexaas + Neon): cria 4 produtos claramente marcados como TESTE.
 // Só rodar com autorização. Depois, inative os produtos nos dois sistemas. Uso: npm run teste-escrita
 import { sql } from '../api/_lib/db.js';
 import { garantirEsquema } from '../api/_lib/schema.js';
@@ -12,8 +12,10 @@ if (!(await garantirCatalogo(sql)).completo) throw new Error('Rode "npm run veri
 
 const marca = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 const itens = [
-  { linha: 1, descricao: `TESTE - NÃO USAR (ENTRA NA LOJA) ${marca}`, familia: '400', ncm: '19059020', entraNaLoja: 'Sim' },
-  { linha: 2, descricao: `TESTE - NÃO USAR (SÓ ESTOQUE) ${marca}`, familia: '800', ncm: '19059020', entraNaLoja: 'Não' },
+  { linha: 1, descricao: `TESTE - NÃO USAR (SAZONAL NATAL) ${marca}`, familia: '400', ncm: '19059020', entraNaLoja: 'Sim', sazonal: 'Sim', familiaSazonal: 'NATAL' },
+  { linha: 2, descricao: `TESTE - NÃO USAR (KIT) ${marca}`, familia: '500', ncm: '19059020', entraNaLoja: 'Sim' },
+  { linha: 3, descricao: `TESTE - NÃO USAR (REVENDA) ${marca}`, familia: '300', ncm: '19059020', entraNaLoja: 'Sim' },
+  { linha: 4, descricao: `TESTE - NÃO USAR (EMBALAGEM FORA DA LOJA) ${marca}`, familia: '200', ncm: '48191000', entraNaLoja: 'Não' },
 ];
 
 let t = performance.now();
