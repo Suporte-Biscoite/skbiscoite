@@ -26,6 +26,7 @@ no ERP com a família correta. Todo cadastro fica registrado em um histórico de
 | --- | --- |
 | **Novo SKU** | Monta uma lista de um ou vários produtos, confere tudo antes do envio e cadastra no Omie e no Nexaas. |
 | **Importação em lote** | Mesma lista, alimentada por planilha `.xlsx`, com validação linha a linha e progresso por item. |
+| **Importar do Omie** | Digite códigos de produtos que já existem no Omie: o sistema confere se já estão no Nexaas e cria os que faltam. Só 300 e 400 entram no PDV. Não altera o Omie. |
 | **Histórico** | Auditoria de cada cadastro: status no Omie, status no Nexaas, erros, quem fez e quando (Neon). |
 | **Gestão de equipe** | Cadastro e edição de colaboradores, com envio de credenciais por e-mail. Visível apenas para o setor **TI**. |
 
@@ -96,6 +97,17 @@ Exemplos: `400` + `0001` = **`4000001`** · `1010` + `001` = **`1010001`**.
 > A tabela de famílias fica em um único lugar: [`src/lib/familias.js`](src/lib/familias.js).
 > O texto da coluna **Família no Omie** precisa ser idêntico ao nome cadastrado no Omie.
 
+## 🔁 Importar do Omie (produtos que já existem)
+
+Para produtos que estão no Omie mas não no Nexaas: na aba **Importar do Omie**, cole os códigos (um por linha) e clique em **Conferir**.
+Para cada código o sistema (1) olha se o SKU já está no Nexaas, (2) lê o produto no Omie e (3) mostra o que será criado. Ao confirmar, cria só o que falta.
+
+- **Entra na loja (PDV):** somente códigos que começam com **300** ou **400** (categoria PRODUTOS PRONTOS, ou a família sazonal do Omie). Todos os outros: só ESTOQUE, só off-line, categoria ATIVO.
+- **Bloqueios com mensagem:** código inexistente, produto inativo, sem NCM de 8 dígitos, código em stand-by ("PRODUTO INDEFINIDO"), família do Omie sem categoria igual no Nexaas. Sem família no Omie, 300/400 usam PRODUTOS PRONTOS (com aviso).
+- **Seguro:** nunca duplica (checa o SKU no Nexaas antes) e nunca escreve no Omie. Cada importação fica no histórico.
+- **Limite do Omie:** o Omie bloqueia a API por ~30 min se receber a mesma consulta muitas vezes seguidas; por isso o sistema consulta o Nexaas primeiro e guarda o resultado por 90 s. Se aparecer o aviso de bloqueio, aguarde.
+- Scripts: `npm run verificar-importacao` (só leitura) e `scripts/teste-importacao.mjs` (escreve produtos TESTE).
+
 ## 📥 Importação em lote
 
 1. Em **Importação em Lote**, clique em **Baixar modelo**.
@@ -137,6 +149,7 @@ vez que alguém cadastra, a tela mostra o progresso da carga (~1 min); depois s�
 ├── api/
 │   ├── lotes.js          # validar / criar / processar / tentar de novo / histórico
 │   ├── sincronizar.js    # espelho do catálogo do Omie
+│   ├── importar.js       # importa do Omie para o Nexaas (analisar / importar)
 │   ├── familias.js       # famílias-base e sazonais
 │   ├── historico.js · login.js · usuarios.js · recuperar-senha.js
 │   └── _lib/             # omie.js, nexaas.js, catalogo.js, cadastros.js, schema.js, sessao.js...

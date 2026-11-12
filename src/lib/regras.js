@@ -129,3 +129,41 @@ export function montarProdutoNexaas(item, codigo, cfg) {
     },
   };
 }
+
+// ---------- Importação de produtos que já existem no Omie ----------
+// Só os grupos 300 (revenda) e 400 (produtos prontos) entram no PDV da loja; o resto fica só no estoque.
+export const PREFIXOS_QUE_ENTRAM_NA_LOJA = ['300', '400'];
+export const entraNaLojaPorCodigo = (codigo) => PREFIXOS_QUE_ENTRAM_NA_LOJA.some((p) => String(codigo ?? '').trim().startsWith(p));
+
+// Lê um produto devolvido pelo Omie (ConsultarProduto) e decide o que criar no Nexaas.
+// `categoriasNexaas`: objeto { NOME_NORMALIZADO: id } (ou qualquer objeto com essas chaves).
+// Devolve { erros, aviso, item, categoriaNexaas }; com erros, o produto não é enviado.
+export function planejarImportacaoOmie(produto, categoriasNexaas = {}) {
+  const erros = [];
+  let aviso = '';
+  const codigo = String(produto?.codigo ?? '').trim();
+  const descricao = String(produto?.descricao ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (String(produto?.inativo).toUpperCase() === 'S') erros.push('Produto inativo no Omie.');
+  if (!descricao) erros.push('Produto sem descrição no Omie.');
+  else if (/^PRODUTO INDEFINIDO|STAND-?BY/.test(normalizarTexto(descricao))) erros.push('Código reservado (produto indefinido / stand-by) no Omie: não há o que importar.');
+  const ncm = normalizarNcm(produto?.ncm);
+  if (!ncm) erros.push('Produto sem NCM no Omie. Preencha o NCM lá e tente de novo.');
+  else if (ncm.length !== 8) erros.push(`NCM inválido no Omie (${produto.ncm}): precisa ter 8 dígitos.`);
+
+  const entraNaLoja = entraNaLojaPorCodigo(codigo);
+  let categoriaNexaas = CATEGORIA_NEXAAS_FORA_DA_LOJA;
+  if (entraNaLoja) {
+    const nomeFamilia = String(produto?.descricao_familia ?? '').trim();
+    const base = nomeFamilia ? resolverFamilia(nomeFamilia) : null;
+    if (!nomeFamilia || normalizarTexto(nomeFamilia) === 'PRODUTO SEM FAMILIA') {
+      categoriaNexaas = 'PRODUTOS PRONTOS';
+      aviso = 'Sem família no Omie: usando a categoria PRODUTOS PRONTOS.';
+    } else if (base && normalizarTexto(base.familia) === normalizarTexto(nomeFamilia)) {
+      categoriaNexaas = base.categoriaNexaas; // 300 e 400 caem em PRODUTOS PRONTOS
+    } else {
+      categoriaNexaas = nomeFamilia.toUpperCase(); // sazonal (NATAL, PÁSCOA...): mesma categoria do Nexaas
+      if (!(normalizarTexto(categoriaNexaas) in categoriasNexaas)) erros.push(`A categoria "${nomeFamilia}" não existe no Nexaas.`);
+    }
+  }
+  return { erros, aviso, categoriaNexaas, item: { descricao, ncm, entraNaLoja } };
+}

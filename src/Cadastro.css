@@ -42,6 +42,9 @@
 .cad-acoes { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .cad-acoes .b-btn { width: 100%; justify-content: center; }
 
+.cad-ajuda { color: var(--text-mocha); margin: -0.5rem 0 1.25rem; max-width: 70ch; }
+.cad-areatexto { resize: vertical; min-height: 8rem; font-family: ui-monospace, Consolas, monospace; }
+
 /* ---------- Planilha ---------- */
 .cad-soltar { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; text-align: center; padding: 2rem 1rem; border: 2px dashed var(--border-cream); border-radius: var(--radius-md); background: var(--bg-vanilla); cursor: pointer; transition: border-color 0.2s, background 0.2s; }
 .cad-soltar:hover, .cad-soltar:focus-within { border-color: var(--brand-gold); background: #fff; }

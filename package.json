@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "node --test src/lib/skus.test.js src/lib/modeloPlanilha.test.js src/lib/regras.test.js",
     "preview": "vite preview",
+    "verificar-importacao": "node --env-file=.env.local scripts/verificar-importacao.mjs",
     "verificar": "node --env-file=.env.local scripts/verificar-fase2.mjs",
     "teste-escrita": "node --env-file=.env.local scripts/teste-escrita.mjs",
     "dev:api": "node --env-file=.env.local scripts/dev-api.mjs",
