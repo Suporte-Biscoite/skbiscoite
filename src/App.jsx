@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Cadastro from './Cadastro.jsx';
+import Importar from './Importar.jsx';
 import './App.css';
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
@@ -348,6 +349,10 @@ function App() {
           <button onClick={() => setModo('massa')} style={{ background: modo === 'massa' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'massa' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'massa' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
             Importação em Massa
           </button>
+          
+          <button onClick={() => setModo('importar')} style={{ background: modo === 'importar' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'importar' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'importar' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+            Importar do Omie
+          </button>
 
           {ehTI && (
             <>
@@ -375,6 +380,7 @@ function App() {
             <h1 className="brand-font">
               {modo === 'individual' && 'Novo SKU'}
               {modo === 'massa' && 'Importação em Lote'}
+              {modo === 'importar' && 'Importar do Omie'}
               {modo === 'usuarios' && 'Gestão de Equipe'}
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
@@ -390,6 +396,7 @@ function App() {
           </div>
         </header>
 
+        {modo === 'importar' && <Importar api={api} exibirToast={exibirToast} />}
         {(modo === 'individual' || modo === 'massa') && <Cadastro modo={modo} api={api} exibirToast={exibirToast} />}
 
         {modo === 'usuarios' && ehTI && (

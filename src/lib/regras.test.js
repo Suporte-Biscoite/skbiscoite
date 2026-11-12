@@ -86,3 +86,36 @@ test('Nexaas, fora da loja: só ESTOQUE + só off-line (sempre juntos)', () => {
 test('Nexaas: sem categoria ou sem NCM não monta', () => {
   assert.throws(() => montarProdutoNexaas(ok(), '1', { ...cfg, categoriaId: null }), /Categoria/);
 });
+
+import { entraNaLojaPorCodigo, planejarImportacaoOmie } from './regras.js';
+
+test('importação: só 300 e 400 entram na loja', () => {
+  assert.equal(entraNaLojaPorCodigo('3000010'), true);
+  assert.equal(entraNaLojaPorCodigo('4000064'), true);
+  for (const c of ['1010001', '2000071', '5000023', '7000001', '8000074']) assert.equal(entraNaLojaPorCodigo(c), false);
+});
+
+test('importação: planeja categoria e loja a partir do produto do Omie', () => {
+  const cats = { 'NATAL': 1, 'PRODUTOS PRONTOS': 2 };
+  const base = { codigo: '4000001', descricao: 'bolo  teste', ncm: '1905.90.20', inativo: 'N', descricao_familia: 'PRODUTOS PRONTOS' };
+  let r = planejarImportacaoOmie(base, cats);
+  assert.deepEqual(r.erros, []);
+  assert.deepEqual(r.item, { descricao: 'BOLO TESTE', ncm: '19059020', entraNaLoja: true });
+  assert.equal(r.categoriaNexaas, 'PRODUTOS PRONTOS');
+  assert.equal(planejarImportacaoOmie({ ...base, codigo: '3000001', descricao_familia: 'PRODUTOS PARA REVENDA' }, cats).categoriaNexaas, 'PRODUTOS PRONTOS');
+  assert.equal(planejarImportacaoOmie({ ...base, descricao_familia: 'NATAL' }, cats).categoriaNexaas, 'NATAL');
+  r = planejarImportacaoOmie({ ...base, descricao_familia: '' }, cats);
+  assert.equal(r.categoriaNexaas, 'PRODUTOS PRONTOS'); assert.ok(r.aviso);
+  r = planejarImportacaoOmie({ ...base, codigo: '2000001', descricao_familia: 'EMBALAGEM' }, cats);
+  assert.equal(r.item.entraNaLoja, false); assert.equal(r.categoriaNexaas, 'ATIVO');
+  assert.ok(planejarImportacaoOmie({ ...base, descricao_familia: 'PASCOA' }, cats).erros[0].includes('não existe no Nexaas'));
+  assert.ok(planejarImportacaoOmie({ ...base, ncm: '' }, cats).erros[0].includes('NCM'));
+  assert.ok(planejarImportacaoOmie({ ...base, inativo: 'S' }, cats).erros[0].includes('inativo'));
+});
+
+test('importação: bloqueia código em stand-by e trata "PRODUTO SEM FAMILIA" como sem família', () => {
+  const p = { codigo: '4000001', descricao: 'PRODUTO INDEFINIDO 12', ncm: '1905.90.20', inativo: 'N', descricao_familia: 'PRODUTO SEM FAMILIA' };
+  assert.ok(planejarImportacaoOmie(p, {}).erros[0].includes('stand-by'));
+  const r = planejarImportacaoOmie({ ...p, descricao: 'BOLO' }, {});
+  assert.deepEqual(r.erros, []); assert.equal(r.categoriaNexaas, 'PRODUTOS PRONTOS');
+});
