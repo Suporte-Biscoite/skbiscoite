@@ -10,7 +10,8 @@ const ROTULO = {
 };
 
 // Aceita um código por linha (ou separados por vírgula / ponto e vírgula). Espaço faz parte do código.
-const lerCodigos = (texto) => [...new Set(texto.split(/[\n,;]+/).map((c) => c.trim()).filter(Boolean))];
+// Também aceita linhas coladas no formato "CODIGO - NOME" (só o código antes do " - " é usado).
+const lerCodigos = (texto) => [...new Set(texto.split(/[\n,;]+/).map((c) => c.split(' - ')[0].trim()).filter(Boolean))];
 
 function destino(i) {
   if (i.entraNaLoja === undefined) return '';
@@ -75,7 +76,14 @@ export default function Importar({ api, exibirToast }) {
     if (ok) exibirToast('Importação finalizada.');
   };
 
-  const nova = () => { setTexto(''); setItens(null); setFase('ocioso'); setFeitos(0); };
+  // Copia no formato "CODIGO - NOME", uma linha por produto (pronto para colar em planilha ou mensagem).
+  const copiar = async () => {
+    const linhas = itens.filter((i) => i.descricao).map((i) => `${i.codigo} - ${i.descricao}`);
+    if (linhas.length === 0) return exibirToast('Nada para copiar.', 'erro');
+    try { await navigator.clipboard.writeText(linhas.join('\n')); exibirToast(`${linhas.length} linha(s) copiadas.`); } catch { exibirToast('Não consegui copiar.', 'erro'); }
+  };
+
+  const nova =() => { setTexto(''); setItens(null); setFase('ocioso'); setFeitos(0); };
 
   const contar = (estado) => itens?.filter((i) => i.estado === estado).length ?? 0;
   const prontos = contar('pronto');
@@ -92,10 +100,10 @@ export default function Importar({ api, exibirToast }) {
         </p>
         <form onSubmit={conferir}>
           <div className="b-input-group">
-            <label htmlFor="imp-codigos">Códigos (um por linha)</label>
+            <label htmlFor="imp-codigos">Códigos (um por linha, ou no formato CÓDIGO - NOME)</label>
             <textarea id="imp-codigos" className="b-input cad-areatexto" rows={6} value={texto} disabled={emAndamento || fase === 'concluido'}
               onChange={(e) => { setTexto(e.target.value); if (itens) { setItens(null); setFase('ocioso'); } }}
-              placeholder={'4000064\n3000010\n8000074'} spellCheck="false" autoComplete="off" />
+              placeholder={'4000064\n3000010 - NOME DO PRODUTO\n8000074'} spellCheck="false" autoComplete="off" />
           </div>
           <div className="cad-acoes">
             <button type="submit" className="b-btn" disabled={codigos.length === 0 || emAndamento || fase === 'concluido'}>
@@ -111,7 +119,12 @@ export default function Importar({ api, exibirToast }) {
             <h3 id="imp-titulo" className="brand-font">
               {fase === 'conferindo' ? 'Conferindo…' : fase === 'importando' ? 'Importando…' : fase === 'concluido' ? 'Importação concluída' : 'Resultado da conferência'}
             </h3>
-            {fase === 'concluido' && <button type="button" className="b-btn-ghost" onClick={nova}>Nova importação</button>}
+            {!emAndamento && (
+              <div className="cad-linha__lado">
+                <button type="button" className="b-btn-ghost" onClick={copiar}>Copiar códigos e nomes</button>
+                {fase === 'concluido' && <button type="button" className="b-btn-ghost" onClick={nova}>Nova importação</button>}
+              </div>
+            )}
           </div>
 
           {emAndamento && (
