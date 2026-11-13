@@ -249,7 +249,7 @@ export default function Cadastro({ modo, api, exibirToast }) {
   };
 
   const copiarCodigos = async () => {
-    const texto = exec.itens.filter((i) => i.codigo).map((i) => `${i.codigo}\t${i.descricao}`).join('\n');
+    const texto = exec.itens.filter((i) => i.codigo).map((i) => `${i.codigo} - ${i.descricao}`).join('\n');
     try { await navigator.clipboard.writeText(texto); exibirToast('Códigos copiados.'); } catch { exibirToast('Não consegui copiar.', 'erro'); }
   };
 
@@ -413,7 +413,7 @@ export default function Cadastro({ modo, api, exibirToast }) {
         <section className="b-card cad-secao fade-in" aria-labelledby="cad-progresso-titulo">
           <div className="cad-secao__topo">
             <h3 id="cad-progresso-titulo" className="brand-font">{exec.rodando ? 'Cadastrando…' : comErroExec ? 'Concluído com pendências' : 'Tudo cadastrado ✓'}</h3>
-            {!exec.rodando && <button type="button" className="b-btn-ghost" onClick={copiarCodigos}>Copiar códigos</button>}
+            {!exec.rodando && <button type="button" className="b-btn-ghost" onClick={copiarCodigos}>Copiar códigos e nomes</button>}
           </div>
           <div className="cad-barra" role="progressbar" aria-valuemin={0} aria-valuemax={totalExec} aria-valuenow={feitos} aria-label="Progresso do cadastro">
             <span style={{ width: `${totalExec ? (feitos / totalExec) * 100 : 5}%` }} />
