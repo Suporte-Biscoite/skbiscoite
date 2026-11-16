@@ -86,27 +86,35 @@ export function acharParecidos(descricao, catalogoPreparado, minimo = CONFIG_PAD
 
 // Lê os campos da tarefa (formato da API do ClickUp). Devolve só o que o sistema usa.
 export function lerTarefaClickUp(tarefa) {
-  const campo = (nome) => (tarefa.custom_fields || []).find((c) => normalizarTexto(c.name) === normalizarTexto(nome));
+  // A API de lista devolve TODOS os campos definidos (inclusive vazios) e pode haver vários com o mesmo nome
+  // (ex.: três "Família de Produto"): vale o que tem valor.
+  const temValor = (c) => c.value !== undefined && c.value !== null && c.value !== '' && !(Array.isArray(c.value) && c.value.length === 0);
+  const campo = (nome) => {
+    const iguais = (tarefa.custom_fields || []).filter((c) => normalizarTexto(c.name) === normalizarTexto(nome));
+    return iguais.find(temValor);
+  };
   const dropdown = (nome) => {
     const c = campo(nome);
-    if (!c || c.value === undefined || c.value === null) return '';
+    if (!c) return '';
     if (typeof c.value === 'object') return c.value.name ?? '';
     const op = (c.type_config?.options || []).find((o) => o.orderindex === c.value || o.id === c.value);
     return op?.name ?? '';
   };
   const solicitante = campo('Quem está solicitando')?.value?.[0];
   const descricao = tarefa.text_content ?? tarefa.description ?? tarefa.markdown_description ?? '';
+  const familiaCampo = dropdown('Família de Produto');
+  const tipoIdentificacao = dropdown('Tipo de Identificação');
   return {
     taskId: String(tarefa.id),
     titulo: String(tarefa.name ?? ''),
     descricao: String(descricao),
     url: tarefa.url || `https://app.clickup.com/t/${tarefa.id}`,
     statusClickUp: typeof tarefa.status === 'string' ? tarefa.status : tarefa.status?.status ?? '',
-    familiaCampo: dropdown('Família de Produto'),
-    tipoIdentificacao: dropdown('Tipo de Identificação'),
+    familiaCampo,
+    tipoIdentificacao,
     solicitante: solicitante?.username ?? tarefa.creator?.username ?? '',
     atualizadoEm: Number(tarefa.date_updated) || 0,
-    ehCadastro: !!campo('Família de Produto') && !!campo('Tipo de Identificação'), // só o formulário de cadastro tem os dois
+    ehCadastro: !!familiaCampo && !!tipoIdentificacao, // só o formulário de cadastro preenche os dois
   };
 }
 
