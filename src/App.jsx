@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Cadastro from './Cadastro.jsx';
 import Importar from './Importar.jsx';
+import Solicitacoes from './Solicitacoes.jsx';
 import './App.css';
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
@@ -359,6 +360,9 @@ function App() {
               <button onClick={() => setModo('usuarios')} style={{ background: modo === 'usuarios' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'usuarios' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'usuarios' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Gestão de Equipe
               </button>
+              <button onClick={() => setModo('solicitacoes')} style={{ background: modo === 'solicitacoes' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'solicitacoes' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'solicitacoes' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+                Solicitações
+              </button>
               <button onClick={() => setModo('historico')} style={{ background: modo === 'historico' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'historico' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'historico' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Histórico & Auditoria
               </button>
@@ -381,6 +385,7 @@ function App() {
               {modo === 'individual' && 'Novo SKU'}
               {modo === 'massa' && 'Importação em Lote'}
               {modo === 'importar' && 'Importar do Omie'}
+              {modo === 'solicitacoes' && 'Solicitações'}
               {modo === 'usuarios' && 'Gestão de Equipe'}
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
@@ -397,6 +402,7 @@ function App() {
         </header>
 
         {modo === 'importar' && <Importar api={api} exibirToast={exibirToast} />}
+        {modo === 'solicitacoes' && ehTI && <Solicitacoes api={api} exibirToast={exibirToast} />}
         {(modo === 'individual' || modo === 'massa') && <Cadastro modo={modo} api={api} exibirToast={exibirToast} />}
 
         {modo === 'usuarios' && ehTI && (
