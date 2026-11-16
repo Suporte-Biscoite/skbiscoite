@@ -108,6 +108,15 @@ Para cada código o sistema (1) olha se o SKU já está no Nexaas, (2) lê o pro
 - **Limite do Omie:** o Omie bloqueia a API por ~30 min se receber a mesma consulta muitas vezes seguidas; por isso o sistema consulta o Nexaas primeiro e guarda o resultado por 90 s. Se aparecer o aviso de bloqueio, aguarde.
 - Scripts: `npm run verificar-importacao` (só leitura) e `scripts/teste-importacao.mjs` (escreve produtos TESTE).
 
+## 📨 Solicitações do ClickUp (Fase 1: só analisar)
+
+Tarefas do formulário de cadastro (lista **Tarefas Gerais**, com os campos Família de Produto e Tipo de Identificação) chegam por **webhook** (`/api/clickup-webhook`, assinatura conferida) e, como reforço, por conferência (`Buscar no ClickUp` na tela ou `/api/clickup-conferir`). Cada linha da descrição vira um item; o título dá a faixa de código ("Cód 7000"). Tudo fica na tela **Solicitações** (setor TI): prévia editável, aprovar/recusar, histórico.
+
+- **Nada é criado no Omie nesta fase.** Aprovar só registra a decisão. Há botão de pausa e modo simulação; o modo automático só existe na Fase 2.
+- Vão para análise: mais de 10 itens, conflito título x família, produto igual/parecido no Omie, código já existente citado, linha duvidosa, SUPRIMENTOS sem faixa.
+- Segurança: eventos repetidos são ignorados (chave única), eventos do robô não disparam nada, segredos só em variáveis de ambiente (veja `.env.example`).
+- Verificação: `npm run verificar-solicitacoes` (tarefas fictícias, sem tocar no ClickUp/Omie/Nexaas). Registro do webhook: `scripts/registrar-webhook-clickup.mjs` (só com autorização).
+
 ## 📥 Importação em lote
 
 1. Em **Importação em Lote**, clique em **Baixar modelo**.
