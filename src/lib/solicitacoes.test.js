@@ -93,3 +93,29 @@ test('linha com vários produtos ou longa demais recebe aviso', () => {
   assert.ok(itens[0].avisos[0].includes('mais de um produto'));
   assert.ok(itens[1].avisos[0].includes('120'));
 });
+
+test('formato real da API de lista: campos vazios e repetidos não atrapalham', () => {
+  const opcoes = (...nomes) => nomes.map((name, orderindex) => ({ name, orderindex }));
+  const t = lerTarefaClickUp({
+    id: '868muy2hw', name: 'Cód 7000 (mat de escritório)', text_content: OITO, status: { status: 'kauã' },
+    custom_fields: [
+      { name: 'Família de Produto', type: 'short_text' }, // outro formulário, vazio
+      { name: 'Família de Produto', type: 'drop_down', type_config: { options: opcoes('Externo', 'Interno', 'Embalagem', 'Envase') } }, // outro formulário, vazio
+      { name: 'Família de Produto', type: 'drop_down', value: 2, type_config: { options: opcoes('INTERNO', 'EXTERNO', 'SUPRIMENTOS', 'ATIVO', 'EMBALAGEM', 'ENVASE') } },
+      { name: 'Tipo de Identificação', type: 'drop_down', value: 0, type_config: { options: opcoes('Código', 'EAN') } },
+      { name: 'Quem está solicitando', type: 'users', value: [{ username: 'Fulano' }] },
+    ],
+  });
+  assert.equal(t.familiaCampo, 'SUPRIMENTOS');
+  assert.equal(t.tipoIdentificacao, 'Código');
+  assert.equal(t.ehCadastro, true);
+  assert.equal(analisarSolicitacao(t).prefixoCodigo, '7000');
+});
+
+test('tarefa de marketing com campos definidos mas vazios não é cadastro', () => {
+  const t = lerTarefaClickUp({ id: 'm1', name: '[DIGITAL] PÁSCOA', text_content: 'Plano\nPeças\nDisparo', custom_fields: [
+    { name: 'Família de Produto', type: 'drop_down', type_config: { options: [{ name: 'INTERNO', orderindex: 0 }] } },
+    { name: 'Tipo de Identificação', type: 'drop_down', type_config: { options: [{ name: 'Código', orderindex: 0 }] } },
+  ] });
+  assert.equal(t.ehCadastro, false);
+});
