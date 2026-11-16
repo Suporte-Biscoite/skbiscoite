@@ -53,6 +53,18 @@ export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalo
   const config = await lerConfig(sql);
   const analise = analisarSolicitacao(t, catalogo ?? (await catalogoDoOmie(sql)), config);
 
+  // Mesmo produto pedido em OUTRA solicitação ainda viva (não recusada): avisa, para nunca criar duas vezes.
+  const nomes = analise.itens.map((i) => i.descricao);
+  if (nomes.length) {
+    const outras = await sql`SELECT DISTINCT i.descricao, s.id FROM solicitacao_itens i JOIN solicitacoes s ON s.id = i.solicitacao_id
+      WHERE s.clickup_task_id <> ${t.taskId} AND s.status <> 'recusada' AND i.incluido AND i.descricao = ANY(${nomes})`;
+    for (const item of analise.itens) {
+      const outra = outras.find((o) => o.descricao === item.descricao);
+      if (outra) item.avisos.push(`Também está na solicitação #${outra.id}.`);
+    }
+    if (outras.length && !analise.motivos.some((m) => m.startsWith('Produto repetido'))) { analise.motivos.push('Produto repetido em outra solicitação em aberto.'); analise.sugestao = 'analise'; }
+  }
+
   let id = existente?.id;
   if (existente?.editado) {
     // Alguém do time já editou os itens: não apagamos o trabalho dele; só registramos que o texto mudou.

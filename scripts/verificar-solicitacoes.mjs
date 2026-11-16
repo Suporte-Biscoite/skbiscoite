@@ -14,7 +14,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA'];
 const limpar = async () => { await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -62,6 +62,12 @@ try {
   assert.equal(it, 1);
   ok(`duas chegadas simultâneas: 1 solicitação e 1 item (${i1.resultado} / ${i2.resultado})`);
 
+  console.log('Mesmo produto em duas solicitações');
+  const rx = await receberTarefa(sql, tarefa('TESTE-OUTRA', 'Cód 7000 (outra)', 'PRODUTO FICTICIO BETA 2 UN'), { origem: 'teste' });
+  const sx = await detalharSolicitacao(sql, rx.id);
+  assert.equal(sx.sugestao, 'analise'); assert.ok(sx.itens[0].avisos[0].includes('Também está na solicitação'));
+  ok('item repetido em outra solicitação vai para análise com aviso');
+
   console.log('Aprovar / recusar / pausa / modo');
   await decidir(sql, usuario, r1.id, { aprovar: true });
   s = await detalharSolicitacao(sql, r1.id); assert.equal(s.status, 'aprovada'); assert.equal(s.decidido_por, usuario.email);
@@ -79,8 +85,11 @@ try {
   assert.ok(lista.length >= 2);
   ok('listagem com busca');
   console.log('\nTUDO OK');
+} catch (erro) {
+  console.error(`FALHOU: ${erro.message}`);
+  process.exitCode = 1;
 } finally {
   await limpar();
   console.log('(linhas de teste apagadas)');
-  process.exit(0);
+  process.exit(process.exitCode ?? 0);
 }
