@@ -53,6 +53,7 @@ const editavel = (s) => ['recebida', 'aguardando_analise'].includes(s.status);
 // Pode preencher NCM/loja e criar: em análise, ou aprovada que ainda não foi para a fila (nada criado).
 const podeCriarAgora = (s) => editavel(s) || (s.status === 'aprovada' && !s.lote_id);
 const ICONE = { ok: '✓', andando: '…', erro: '!', pendente: '○', desligado: '–' };
+const NOMES_FAMILIA = { 200: 'EMBALAGEM (200)', 300: 'EXTERNO (300)', 400: 'INTERNO (400)', 500: 'KITS (500)', 700: 'SUPRIMENTOS (700)', 800: 'ATIVO (800)', 1010: 'ENVASE E MATÉRIA-PRIMA (1010)' };
 const PREFIXOS_LOJA = ['300', '400']; // mesma regra do cadastro: só 300/400 entram na loja
 // NCM mostrado: o digitado/salvo; se estiver vazio ou for só o padrão da família, a sugestão lida da nota tem preferência.
 const ncmInicial = (i, ncmPadrao) => {
@@ -162,6 +163,12 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
     const l = d.leitura || {};
     exibirToast(l.achados + ' de ' + l.total + ' NCM(s) encontrados na nota.' + (l.erroIA ? ' A IA não respondeu: ' + l.erroIA : ''), l.achados === l.total ? undefined : 'erro');
   };
+  const conferirFamiliaIA = async () => {
+    const salvo = await acao('editar', { itens, prefixoCodigo: faixa || undefined });
+    if (!salvo) return;
+    const d = await acao('conferir-familia', {}, 'A IA conferiu a família dos produtos.');
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
+  };
   const tentarDeNovo = async (etapa) => {
     const d = await acao('tentar-de-novo', { etapa }, 'Tentando de novo.');
     if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
@@ -230,6 +237,19 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
             <div><dt>Tipo do pedido</dt><dd>{alteracao ? 'Alteração (não cria código)' : aberta.rota === 'importar' ? 'Produto já existe: usar "Importar do Omie"' : 'Produto novo (cria código)'}</dd></div>
           </dl>
           {aberta.auto_motivo && <div className="sol-motivos" role="note"><strong>Criação automática</strong><ul><li>{aberta.auto_motivo}</li></ul></div>}
+          {podeCriar && (aberta.ia_familia?.itens || []).some((x) => x.diverge) && (() => {
+            const div = aberta.ia_familia.itens.filter((x) => x.diverge);
+            const sugeridas = [...new Set(div.map((x) => x.prefixo))];
+            return (
+              <div className="sol-motivos sol-ia" role="note">
+                <strong>A IA estranhou a família deste pedido</strong>
+                <ul>{div.map((x) => <li key={x.descricao}><strong>{x.descricao}</strong> parece ser {NOMES_FAMILIA[x.prefixo] || x.prefixo}{x.motivo ? ': ' + x.motivo : ''}</li>)}</ul>
+                {sugeridas.length === 1 && String(faixa) !== sugeridas[0] && (
+                  <button type="button" className="b-btn-outline cad-mini" onClick={() => { setFaixa(sugeridas[0]); exibirToast('Família trocada para ' + sugeridas[0] + '. Ela vale ao aprovar.'); }}>Usar família {NOMES_FAMILIA[sugeridas[0]] || sugeridas[0]}</button>
+                )}
+              </div>
+            );
+          })()}
           {(aberta.motivos || []).length > 0 && (
             <div className="sol-motivos" role="note">
               <strong>{alteracao ? 'Sobre este pedido' : 'Atenção: o que o sistema encontrou'}</strong>
@@ -306,6 +326,7 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                   <div className="sol-botoes">
                     <button type="button" className="b-btn-outline cad-mini" onClick={reanalisar} disabled={!!ocupado}>Ler de novo</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={salvar} disabled={!!ocupado}>Salvar edição</button>
+                    <button type="button" className="b-btn-outline cad-mini" onClick={conferirFamiliaIA} disabled={!!ocupado} title="A IA confere se cada produto combina com a família escolhida (ex.: um móvel não é suprimento)">{ocupado === 'conferir-familia' ? 'A IA está conferindo…' : 'Conferir família com a IA'}</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={lerNota} disabled={!!ocupado} title="Lê o PDF da nota fiscal anexado na tarefa e sugere o NCM de cada produto">{ocupado === 'ler-nota' ? 'Lendo a nota…' : 'Ler NCM da nota (PDF)'}</button>
                     {podeEditar && <button type="button" className="b-btn-outline cad-mini" onClick={() => setRecusando(true)} disabled={!!ocupado}>Recusar</button>}
                     <button type="button" className="b-btn" onClick={aprovar} disabled={!!ocupado || incluidos === 0}>{ocupado === 'aprovar' || ocupado === 'editar' ? 'Criando…' : 'Aprovar e criar códigos'}</button>

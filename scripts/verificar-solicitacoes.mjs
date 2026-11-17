@@ -8,6 +8,7 @@ import { chaveDoEvento } from '../api/_lib/clickup.js';
 import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '../api/_lib/criacao.js';
 import { gravarNcmPadrao, listarParaRevisarNcm, revisarNcm } from '../api/_lib/ncm.js';
 import { lerNotaDaSolicitacao } from '../api/_lib/nota.js';
+import { conferirFamilia } from '../api/_lib/familia-ia.js';
 import { processarFilaAutomatica, ROBO } from '../api/_lib/automatico.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
@@ -18,7 +19,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM'];
 const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -257,6 +258,22 @@ try {
   await assert.rejects(() => aprovarECriar(sql, usuario, alt.id, SEM_PROCESSAR), /alteração/);
   s = await detalharSolicitacao(sql, alt.id); assert.equal(s.lote_id, null); assert.equal(s.status, 'aguardando_analise');
   ok('pedido de alteração vai para "Outras tarefas", não aparece em produtos novos e não pode criar código');
+  console.log('IA confere a família (GAVETEIRO pedido como SUPRIMENTOS)');
+  const fam = await receberTarefa(sql, tarefa('TESTE-FAM', 'Pedido família TESTE', 'GAVETEIRO ORGANIZADOR TESTE\nPAPEL HIGIENICO TESTE', 'SUPRIMENTOS(700)'), { origem: 'teste' });
+  s = await detalharSolicitacao(sql, fam.id); assert.equal(s.sugestao, 'automatica');
+  const iaFam = async (_t, _f, nomes) => nomes.map((d) => (d.includes('GAVETEIRO') ? { descricao: d, prefixo: '800', confianca: 'alta', motivo: 'móvel' } : { descricao: d, prefixo: '700', confianca: 'alta', motivo: '' }));
+  const rf = await conferirFamilia(sql, fam.id, { ia: iaFam });
+  assert.equal(rf.divergencias, 1);
+  s = await detalharSolicitacao(sql, fam.id);
+  assert.equal(s.sugestao, 'analise'); assert.ok(s.motivos.some((m) => m.startsWith('IA:') && m.includes('ATIVO')));
+  assert.ok(s.itens.find((i) => i.descricao.includes('GAVETEIRO')).avisos.some((a) => a.startsWith('IA: ')));
+  assert.equal(s.itens.find((i) => i.descricao.includes('PAPEL')).avisos.length, 0);
+  assert.equal(s.ia_familia.itens.filter((x) => x.diverge).length, 1);
+  await conferirFamilia(sql, fam.id, { ia: iaFam }); // repetir não acumula avisos
+  s = await detalharSolicitacao(sql, fam.id); assert.equal(s.motivos.filter((m) => m.startsWith('IA:')).length, 1);
+  await conferirFamilia(sql, fam.id, { ia: async (_t, _f, nomes) => nomes.map((d) => ({ descricao: d, prefixo: '700', confianca: 'alta', motivo: '' })) });
+  s = await detalharSolicitacao(sql, fam.id); assert.equal(s.sugestao, 'automatica'); assert.equal(s.motivos.length, 0);
+  ok('a IA aponta item de outra família, vira alerta (sem alertas só quando some), e repetir não duplica');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

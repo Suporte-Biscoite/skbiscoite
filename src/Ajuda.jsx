@@ -46,7 +46,7 @@ export default function Ajuda({ ehTI }) {
             <p>Abra o pedido e passe por esta lista:</p>
             <ol>
               <li><strong>Os nomes estão certos?</strong> Uma linha é um produto. Corrija direto no campo, remova a linha com × ou desmarque "Incluir".</li>
-              <li><strong>A família está certa?</strong> O código sai dela. Se o formulário e o título discordarem, o sistema avisa.</li>
+              <li><strong>A família está certa?</strong> O código sai dela. A IA confere sozinha se cada produto combina com a família pedida (por exemplo, GAVETEIRO é móvel, então é ATIVO 800 e não SUPRIMENTOS 700; papel higiênico e produto de limpeza são SUPRIMENTOS). Se ela estranhar, aparece um aviso com o botão "Usar família…". Você sempre decide.</li>
               <li><strong>O NCM está certo?</strong> Famílias 700 e 800 usam o NCM da nota fiscal do fornecedor (o botão "Ler NCM da nota (PDF)" sugere). As outras já vêm com um NCM padrão, que fica marcado para revisão depois.</li>
               <li><strong>Já existe?</strong> Se aparecer "Já existe no Omie com este nome", não crie de novo: use "Importar do Omie" ou recuse o pedido.</li>
               <li><strong>Entra na loja?</strong> Marcado por padrão só nas famílias 300 e 400.</li>
