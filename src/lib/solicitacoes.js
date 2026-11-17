@@ -4,9 +4,10 @@ import { FAMILIAS, normalizarTexto } from './familias.js';
 import { LIMITE_DESCRICAO, padronizarNome } from './regras.js';
 
 export const CONFIG_PADRAO = Object.freeze({
-  modo: 'analisar', // analisar | simulacao | automatico (automatico só na Fase 2)
+  modo: 'analisar', // analisar | simulacao (só avalia) | automatico (cria sozinho as pequenas e limpas aprovadas pela IA)
   pausado: false,
   limiteItensAuto: 10,
+  limiteAutoPorDia: 20,
   intervaloMinutos: 10,
   espacoEntreItensSeg: 2,
   similaridadeMinima: 0.8,

@@ -21,12 +21,12 @@ export async function gravarConfig(sql, usuario, mudancas) {
   const novo = { ...atual };
   if ('pausado' in mudancas) novo.pausado = !!mudancas.pausado;
   if ('modo' in mudancas) {
-    // Fase 1: o automático ainda não existe. Só liga na Fase 2, com autorização.
-    if (!['analisar', 'simulacao'].includes(mudancas.modo)) throw new Error('Modo inválido. Nesta fase só existem "analisar" e "simulacao".');
+    if (!['analisar', 'simulacao', 'automatico'].includes(mudancas.modo)) throw new Error('Modo inválido.');
     novo.modo = mudancas.modo;
   }
   const inteiro = (v, min, max, nome) => { const n = Number(v); if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${nome} deve ser um número inteiro entre ${min} e ${max}.`); return n; };
   if ('limiteItensAuto' in mudancas) novo.limiteItensAuto = inteiro(mudancas.limiteItensAuto, 1, 100, 'Limite de itens');
+  if ('limiteAutoPorDia' in mudancas) novo.limiteAutoPorDia = inteiro(mudancas.limiteAutoPorDia, 1, 500, 'Limite por dia');
   if ('intervaloMinutos' in mudancas) novo.intervaloMinutos = inteiro(mudancas.intervaloMinutos, 1, 240, 'Intervalo');
   const { comentarNoClickUp: _c, ...gravar } = novo;
   await gravarEstado(sql, 'automacao_clickup', gravar);
@@ -168,7 +168,7 @@ export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
 // ---------- Tela: listar, detalhar, editar, aprovar, recusar ----------
 export async function listarSolicitacoes(sql, { status = '', busca = '', sugestao = '' } = {}) {
   const b = `%${busca.trim()}%`;
-  return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.status_clickup, s.comentado_em, s.recebido_em, s.decidido_em, s.decidido_por,
+  return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.status_clickup, s.comentado_em, s.auto_motivo, s.recebido_em, s.decidido_em, s.decidido_por,
       (SELECT count(*) FROM solicitacao_itens i WHERE i.solicitacao_id = s.id AND i.incluido) AS itens
     FROM solicitacoes s
     WHERE (CASE WHEN ${status} = '' THEN s.status NOT IN ('finalizada_clickup', 'cancelada_clickup', 'concluida')

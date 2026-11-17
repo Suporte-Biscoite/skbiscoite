@@ -129,6 +129,7 @@ export default function Solicitacoes({ api, exibirToast }) {
     if (r) { exibirToast(`${r.lidas} tarefa(s) lidas: ${r.novas} nova(s), ${r.atualizadas} atualizada(s), ${r.encerradas ?? 0} encerrada(s).`); carregar(); }
   };
   const mudarConfig = async (mudanca) => {
+    if (mudanca.modo === 'automatico' && !window.confirm('Modo AUTOMÁTICO: pedidos pequenos e sem alerta, aprovados pela IA, serão CRIADOS sozinhos no Omie e no Nexaas e comentados no ClickUp. Os demais continuam para análise. Ligar?')) return;
     try { setConfig({ ...config, ...(await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'config', ...mudanca } })) }); } catch (e) { exibirToast(e.message, 'erro'); }
   };
 
@@ -174,6 +175,7 @@ export default function Solicitacoes({ api, exibirToast }) {
             <div><dt>Tipo de identificação</dt><dd>{aberta.tipo_identificacao || '—'}</dd></div>
             <div><dt>Destino</dt><dd>{aberta.rota === 'importar' ? 'Importar do Omie' : 'Criar código novo'}</dd></div>
           </dl>
+          {aberta.auto_motivo && <div className="sol-motivos" role="note"><strong>Criação automática</strong><ul><li>{aberta.auto_motivo}</li></ul></div>}
           {(aberta.motivos || []).length > 0 && (
             <div className="sol-motivos" role="note">
               <strong>Por que precisa de atenção</strong>
@@ -288,8 +290,8 @@ export default function Solicitacoes({ api, exibirToast }) {
         </div>
         {config && (
           <div className="sol-config">
-            <span className="cad-chip cad-chip--andando" title="Nesta fase nenhum código é criado automaticamente">
-              {config.modo === 'simulacao' ? 'Modo simulação' : 'Só analisar'}
+            <span className={'cad-chip cad-chip--' + (config.modo === 'automatico' && !config.pausado ? 'ok' : 'andando')} title="Aprovar manualmente sempre cria; o modo controla só a criação automática">
+              {config.modo === 'simulacao' ? 'Modo simulação' : config.modo === 'automatico' ? (config.pausado ? 'Automático pausado' : 'Automático ligado') : 'Só analisar'}
             </span>
             <label className="cad-switch">
               <input type="checkbox" role="switch" checked={!!config.pausado} onChange={(e) => mudarConfig({ pausado: e.target.checked })} />
@@ -300,7 +302,7 @@ export default function Solicitacoes({ api, exibirToast }) {
               <select className="b-input" value={config.modo} onChange={(e) => mudarConfig({ modo: e.target.value })}>
                 <option value="analisar">Só analisar</option>
                 <option value="simulacao">Simulação</option>
-                <option value="automatico" disabled>Automático (Fase 2)</option>
+                <option value="automatico">Automático (cria sozinho as pequenas e limpas)</option>
               </select>
             </label>
           </div>
@@ -338,6 +340,7 @@ export default function Solicitacoes({ api, exibirToast }) {
                     <strong>{s.titulo}</strong>
                     <span>{[s.solicitante, `${s.itens} produto${Number(s.itens) === 1 ? '' : 's'}`, s.prefixo_codigo && `faixa ${s.prefixo_codigo}`, s.status_clickup && `ClickUp: ${s.status_clickup}`, quando(s.recebido_em), s.origem === 'teste' ? 'TESTE' : ''].filter(Boolean).join(' · ')}</span>
                     {s.sugestao === 'analise' && (s.motivos || [])[0] && <em className="cad-linha__problema">{s.motivos[0]}</em>}
+                    {s.auto_motivo && <em className="cad-linha__problema">Automático: {s.auto_motivo}</em>}
                   </div>
                   <div className="cad-linha__lado"><Chip par={STATUS[s.status]} /> <Chip par={SUGESTAO[s.sugestao]} /></div>
                 </button>

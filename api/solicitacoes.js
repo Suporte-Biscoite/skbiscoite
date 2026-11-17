@@ -11,6 +11,7 @@ import { garantirEsquema } from './_lib/schema.js';
 import { clickupConfigurado } from './_lib/clickup.js';
 import { lerNotaDaSolicitacao } from './_lib/nota.js';
 import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
+import { processarFilaAutomatica } from './_lib/automatico.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { conferirLista, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
@@ -41,7 +42,9 @@ export default async function handler(req, res) {
     if (acao === 'ncm-revisar') return res.status(200).json(await revisarNcm(sql, usuario, Number(req.body.itemId), req.body.ncm));
     if (acao === 'conferir') {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
-      return res.status(200).json(await conferirLista(sql));
+      const lista = await conferirLista(sql);
+      const automatico = await processarFilaAutomatica(sql).catch((erro) => ({ erro: String(erro.message).slice(0, 200) }));
+      return res.status(200).json({ ...lista, automatico });
     }
     const n = Number(id);
     if (!Number.isInteger(n)) return res.status(400).json({ error: 'Solicitação inválida.' });

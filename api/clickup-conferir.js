@@ -5,6 +5,7 @@ import { sql } from './_lib/db.js';
 import { garantirEsquema } from './_lib/schema.js';
 import { clickupConfigurado } from './_lib/clickup.js';
 import { conferirLista } from './_lib/solicitacoes.js';
+import { processarFilaAutomatica } from './_lib/automatico.js';
 
 export default async function handler(req, res) {
   const segredo = process.env.CRON_SECRET;
@@ -14,7 +15,9 @@ export default async function handler(req, res) {
   if (!clickupConfigurado()) return res.status(409).json({ error: 'CLICKUP_API_TOKEN não configurado.' });
   try {
     await garantirEsquema();
-    return res.status(200).json(await conferirLista(sql));
+    const lista = await conferirLista(sql);
+    const automatico = await processarFilaAutomatica(sql).catch((erro) => ({ erro: String(erro.message).slice(0, 200) }));
+    return res.status(200).json({ ...lista, automatico });
   } catch (erro) {
     console.error('Erro na conferência do ClickUp:', erro.message);
     return res.status(500).json({ error: 'Erro na conferência.' });
