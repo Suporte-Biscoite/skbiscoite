@@ -5,13 +5,15 @@
 // A aprovação por uma pessoa é a autorização de criar aquela solicitação. O modo "Só analisar" e a pausa
 // travam apenas a criação AUTOMÁTICA (sem aprovação), que é a Fase 2.
 import { sql as sqlPadrao } from './db.js';
-import { criarLote, estadoDoLote, processarLote, reprocessar, validarLote } from './cadastros.js';
+import crypto from 'node:crypto';
+import { criarLote, estadoDoLote, processarLote, registrarJaCadastrados, reprocessar, validarLote } from './cadastros.js';
+import { resolverExistentes } from './existentes.js';
 import { atualizarStatusTarefa } from './clickup.js';
 import { comentarCodigos, detalharSolicitacao, lerConfig } from './solicitacoes.js';
 import { obterFamiliaPorPrefixo } from '../../src/lib/familias.js';
 import { normalizarNcm } from '../../src/lib/skus.js';
 import { lerNcmPadrao } from './ncm.js';
-import { PREFIXOS_QUE_ENTRAM_NA_LOJA } from '../../src/lib/regras.js';
+import { PREFIXOS_QUE_ENTRAM_NA_LOJA, validarItem } from '../../src/lib/regras.js';
 
 const ESTADOS_QUE_PODEM_APROVAR = ['aguardando_analise', 'recebida', 'aprovada'];
 
@@ -29,7 +31,7 @@ export async function aprovarECriar(sql = sqlPadrao, usuario, id, opcoes = {}) {
   const prefixo = prefixoParaCriar(s);
   if (!obterFamiliaPorPrefixo(prefixo)) throw new Error('A família da solicitação não foi reconhecida. Corrija a faixa de código antes de aprovar.');
 
-  const itens = await sql`SELECT id, ordem, descricao, ncm, entra_na_loja FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido ORDER BY ordem`;
+  const itens = await sql`SELECT id, ordem, descricao, ncm, entra_na_loja, usar_codigo FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido ORDER BY ordem`;
   if (itens.length === 0) throw new Error('Não há itens para aprovar.');
   // NCM padrão da família (200, 300, 400, 500, 1010): preenche o que está vazio. 700 e 800 não têm padrão: vem da nota.
   const padrao = (await lerNcmPadrao(sql))[prefixo] ?? null;
@@ -37,29 +39,46 @@ export async function aprovarECriar(sql = sqlPadrao, usuario, id, opcoes = {}) {
     if (!normalizarNcm(i.ncm) && padrao) i.ncm = padrao;
     i.ncmPadrao = !!padrao && normalizarNcm(i.ncm) === padrao;
   }
-  const brutos = itens.map((i) => ({
+  const brutoDe = (i) => ({
     linha: i.ordem, descricao: i.descricao, prefixo, ncm: i.ncm,
     entraNaLoja: i.entra_na_loja ?? PREFIXOS_QUE_ENTRAM_NA_LOJA.includes(prefixo), sazonal: false,
-  }));
+  });
+  // Antes de criar: o produto já existe no Omie? (leitura). Com o código certo, só o Nexaas é conferido; com o errado, bloqueia.
+  const decisoes = await resolverExistentes(sql, itens, prefixo);
+  const bloqueios = decisoes.map((d, k) => (d.tipo === 'bloqueado' ? `${itens[k].descricao}: ${d.motivo}` : null)).filter(Boolean);
+  if (bloqueios.length) throw new Error(`Não dá para criar ainda. ${bloqueios.join(' | ')}`);
+  const novos = itens.filter((_, k) => decisoes[k].tipo === 'novo');
+  const reaproveitados = itens.map((i, k) => ({ i, d: decisoes[k] })).filter((x) => x.d.tipo === 'reaproveitar');
+
   // Valida ANTES de aprovar: sem NCM, nome repetido no Omie etc. a solicitação continua em análise.
-  const resultados = await validarLote(sql, brutos);
-  const problemas = resultados.filter((r) => r.erros.length).map((r) => `${r.descricao || `item ${r.linha}`}: ${r.erros.join(' ')}`);
+  const resultados = await validarLote(sql, novos.map(brutoDe));
+  const validadosReuso = reaproveitados.map(({ i }) => validarItem(brutoDe(i)));
+  const problemas = [
+    ...resultados.filter((r) => r.erros.length).map((r) => `${r.descricao || `item ${r.linha}`}: ${r.erros.join(' ')}`),
+    ...validadosReuso.map((v, k) => (v.erros.length ? `${reaproveitados[k].i.descricao}: ${v.erros.join(' ')}` : null)).filter(Boolean),
+  ];
   if (problemas.length) throw new Error(`Não dá para criar ainda. ${problemas.join(' | ')}`);
 
-  for (const [k, i] of itens.entries()) await sql`UPDATE solicitacao_itens SET ncm = ${i.ncm}, ncm_padrao = ${i.ncmPadrao}, descricao = ${resultados[k].item.descricao} WHERE id = ${i.id}`;
+  for (const [k, i] of novos.entries()) await sql`UPDATE solicitacao_itens SET ncm = ${i.ncm}, ncm_padrao = ${i.ncmPadrao}, descricao = ${resultados[k].item.descricao} WHERE id = ${i.id}`;
+  for (const { i } of reaproveitados) await sql`UPDATE solicitacao_itens SET ncm = ${i.ncm}, ncm_padrao = ${i.ncmPadrao} WHERE id = ${i.id}`;
+  const brutos = novos.map(brutoDe);
 
   // Trava atômica: duas aprovações ao mesmo tempo nunca criam dois lotes.
   const [trava] = await sql`UPDATE solicitacoes SET status = 'na_fila', na_fila_em = now(), decidido_por = COALESCE(decidido_por, ${usuario.email}), decidido_em = COALESCE(decidido_em, now()), atualizado_em = now()
     WHERE id = ${id} AND lote_id IS NULL AND status = ANY(${ESTADOS_QUE_PODEM_APROVAR}) AND na_fila_em IS NULL RETURNING id`;
   if (!trava) return avancar(sql, usuario, id, opcoes);
+  const loteId = crypto.randomUUID();
   try {
-    const lote = await criarLote(sql, usuario, brutos);
-    if (!lote.lote_id || lote.criados !== itens.length) throw new Error('Nem todos os itens entraram na fila.');
-    await sql`UPDATE solicitacoes SET lote_id = ${lote.lote_id}::uuid WHERE id = ${id}`;
-    const cadastros = await sql`SELECT id, linha FROM cadastros WHERE lote_id = ${lote.lote_id}::uuid`;
+    const lote = await criarLote(sql, usuario, brutos, { loteId });
+    if (lote.criados !== novos.length) throw new Error('Nem todos os itens entraram na fila.');
+    await registrarJaCadastrados(sql, usuario, loteId, reaproveitados.map(({ i, d }, k) => ({ linha: i.ordem, descricao: d.descricao, codigo: d.codigo, codigoProduto: d.codigoProduto, item: validadosReuso[k].item })));
+    await sql`UPDATE solicitacoes SET lote_id = ${loteId}::uuid WHERE id = ${id}`;
+    const cadastros = await sql`SELECT id, linha FROM cadastros WHERE lote_id = ${loteId}::uuid`;
     for (const c of cadastros) await sql`UPDATE solicitacao_itens SET cadastro_id = ${c.id}, status = 'na_fila' WHERE solicitacao_id = ${id} AND ordem = ${c.linha}`;
-    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, ${usuario.email}, 'aprovada', ${JSON.stringify({ itens: itens.length, prefixo })}::jsonb)`;
+    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, ${usuario.email}, 'aprovada', ${JSON.stringify({ itens: itens.length, prefixo, reaproveitados: reaproveitados.map(({ d }) => d.codigo) })}::jsonb)`;
   } catch (erro) {
+    // Nada foi enviado ao Omie/Nexaas ainda: desfaz as linhas da fila deste lote (assim uma nova tentativa não esbarra em código reservado).
+    await sql`DELETE FROM cadastros WHERE lote_id = ${loteId}::uuid AND NOT EXISTS (SELECT 1 FROM solicitacoes WHERE lote_id = ${loteId}::uuid)`;
     await sql`UPDATE solicitacoes SET status = ${s.status}, na_fila_em = NULL WHERE id = ${id} AND lote_id IS NULL`;
     throw erro;
   }

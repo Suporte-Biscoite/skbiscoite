@@ -93,7 +93,10 @@ export function garantirEsquema(sql = sqlPadrao) {
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_hash text`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_motivo text`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_avaliada_em timestamptz`;
-    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS ia_familia jsonb`
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS ia_familia jsonb`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS ia_comentado_hash text`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS usar_codigo text`;
+    await sql`ALTER TABLE cadastros ADD COLUMN IF NOT EXISTS nexaas_origem text`
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS na_fila_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS codigos_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentario_erro text`;

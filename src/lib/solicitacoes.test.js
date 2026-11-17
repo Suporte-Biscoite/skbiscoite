@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ehPedidoDeAlteracao, analisarSolicitacao, acharParecidos, lerFaixaDoTitulo, lerLinhasDaDescricao, lerTarefaClickUp, prefixoDaFamiliaDoCampo, prepararCatalogo } from './solicitacoes.js';
+import { chaveCanonica, situacaoDoCodigo, ehPedidoDeAlteracao, analisarSolicitacao, acharParecidos, lerFaixaDoTitulo, lerLinhasDaDescricao, lerTarefaClickUp, prefixoDaFamiliaDoCampo, prepararCatalogo } from './solicitacoes.js';
 
 // Tarefas reais do formulário (nomes de produtos; sem dados pessoais), no formato da API do ClickUp.
 const campos = (familia, ident = 'Código') => [
@@ -65,6 +65,24 @@ test('alteração de nome e ativar códigos vão para "Outras tarefas"; produto 
   for (const t of ['GAVETEIRO ORGANIZADOR', 'CX Organizadora Dobrável Multiuso Com Polia Giratória', 'Biscoito Ativador de Fermento']) assert.equal(ehPedidoDeAlteracao(t), false, t);
   const a = analisarSolicitacao(tarefa('Alteração de nome Mães 2027', 'X\nY', 'INTERNO(400)'));
   assert.equal(a.sugestao, 'analise'); assert.equal(a.motivos.length, 1);
+});
+
+test('mesmo produto com acento, caixa, ordem e abreviação diferentes é o mesmo nome', () => {
+  assert.equal(chaveCanonica('Moinho Astro 12 Instantâneo'), chaveCanonica('INSTANTANEO MOINHO ASTRO 12'));
+  assert.equal(chaveCanonica('Neutre CX/3 RF 500ML'), chaveCanonica('NEUTRE CAIXA 3 REFIL 500ML'));
+  assert.notEqual(chaveCanonica('TAMPER 53MM INOX'), chaveCanonica('TAMPER 58MM INOX'));
+  const cat = prepararCatalogo([{ codigo: '7004083', descricao: 'MOINHO ASTRO 12 INSTANTANEO' }, { codigo: '10360', descricao: 'GAVETA DE BORRA' }]);
+  const [a] = acharParecidos('INSTANTANEO MOINHO ASTRO 12', cat, 0.8, 3, '700');
+  assert.deepEqual([a.igual, a.situacao], [true, 'correto']);
+  assert.equal(acharParecidos('GAVETA DE BORRA', cat, 0.8, 3, '800')[0].situacao, 'fora_da_faixa');
+});
+
+test('situação do código: certo, outra família ou fora da faixa', () => {
+  assert.equal(situacaoDoCodigo('7004083', '700'), 'correto');
+  assert.equal(situacaoDoCodigo('8000103', '700'), 'outra_familia');
+  assert.equal(situacaoDoCodigo('10360', '800'), 'fora_da_faixa');
+  assert.equal(situacaoDoCodigo('10100001', '1010'), 'fora_da_faixa');
+  assert.equal(situacaoDoCodigo('1010001', '1010'), 'correto');
 });
 
 test('nomes sobem em MAIÚSCULAS e SEM ACENTO', () => {

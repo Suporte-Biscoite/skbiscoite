@@ -1,5 +1,6 @@
 // api/_lib/familia-ia.js — a IA confere se cada produto pedido combina com a FAMÍLIA escolhida no formulário.
 // Ex.: "GAVETEIRO" pedido como SUPRIMENTOS (700) é móvel/equipamento = ATIVO (800). A IA só ALERTA e sugere; quem decide é a pessoa.
+import crypto from 'node:crypto';
 import { sql as sqlPadrao } from './db.js';
 
 const PREFIXOS = ['200', '300', '400', '500', '700', '800', '1010'];
@@ -13,7 +14,7 @@ const REGRAS = `Famílias de produto de uma fábrica/loja de biscoitos:
 300 EXTERNO: produto pronto comprado de terceiros para revenda.
 400 INTERNO: produto pronto de produção própria (biscoitos, bolos, ganaches, kits de venda).
 500 KITS/CESTAS.
-700 SUPRIMENTOS: itens de consumo e uso geral: papel higiênico, material de limpeza, produtos de limpeza, material de escritório, copos, descartáveis, EPI, uniformes.
+700 SUPRIMENTOS: SOMENTE itens de consumo e uso geral que NÃO são comida nem ingrediente: papel higiênico, produtos de limpeza, panos, material de escritório, copos, descartáveis, EPI, uniformes. Alimento, ingrediente, cobertura, recheio, massa, chocolate, cacau, mescla, ganache ou qualquer insumo usado para fazer ou envasar produto NUNCA é 700 (é 1010 ou produto pronto).
 800 ATIVO: bens duráveis: móveis, armários, gaveteiros, prateleiras, organizadores, equipamentos, máquinas, utensílios duráveis, eletrodomésticos, ferramentas.
 1010 ENVASE E MATÉRIA-PRIMA: ingredientes e insumos usados na produção ou no envase.
 Para cada produto, diga a família MAIS PROVÁVEL pelo que o produto é. confianca: "alta" só quando é claro.`;
@@ -59,9 +60,40 @@ export function acharDivergencias(prefixoEscolhido, pareceres) {
   return pareceres.filter((p) => p && p.confianca !== 'baixa' && AREA(p.prefixo) !== AREA(prefixoEscolhido));
 }
 
+// Um comentário por dúvida: a trava (hash) impede repetir o mesmo, e só um conteúdo novo gera outro comentário.
+async function comentarDuvida(sql, id, prefixo, diverge, comentar) {
+  const hash = crypto.createHash('sha256').update(JSON.stringify([prefixo, diverge.map((d) => [d.descricao, d.prefixo]).sort()])).digest('hex').slice(0, 24);
+  const [anterior] = await sql`SELECT ia_comentado_hash FROM solicitacoes WHERE id = ${id}`;
+  const trava = await sql`UPDATE solicitacoes SET ia_comentado_hash = ${hash} WHERE id = ${id} AND ia_comentado_hash IS DISTINCT FROM ${hash} RETURNING id`;
+  if (!trava.length) return { enviado: false, motivo: 'Esta dúvida já foi comentada.' };
+  const registrar = (acao, detalhe) => sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${acao}, ${JSON.stringify(detalhe)}::jsonb)`;
+  try {
+    const r = await comentar(sql, id, textoDaDuvida(id, prefixo, diverge));
+    if (!r.enviado) { await sql`UPDATE solicitacoes SET ia_comentado_hash = ${anterior?.ia_comentado_hash ?? null} WHERE id = ${id}`; return r; }
+    await registrar('ia-comentou-duvida', { itens: diverge.map((d) => d.descricao) });
+    return { enviado: true };
+  } catch (erro) {
+    await sql`UPDATE solicitacoes SET ia_comentado_hash = ${anterior?.ia_comentado_hash ?? null} WHERE id = ${id}`;
+    await registrar('ia-comentario-falhou', { erro: String(erro.message).slice(0, 200) });
+    return { enviado: false, motivo: String(erro.message).slice(0, 200) };
+  }
+}
+
 // Confere a solicitação: grava o parecer, avisa nos itens e nos motivos e manda para análise se houver divergência.
 // Seguro para repetir: os avisos da IA anteriores são trocados pelos novos.
-export async function conferirFamilia(sql = sqlPadrao, id, { ia = perguntarFamiliaIA } = {}) {
+// Texto da dúvida que a IA deixa na tarefa do ClickUp (em forma de pergunta; quem decide é a equipe).
+export function textoDaDuvida(id, prefixoPedido, divergentes) {
+  const linhas = divergentes.map((d) => `• ${d.descricao}: parece ser ${nomeDaFamilia(d.prefixo)}.${d.motivo ? ' ' + d.motivo : ''}`);
+  const explicacao = {
+    700: 'Suprimentos (700) são itens de consumo e uso geral, como papel, produtos de limpeza e pano. Alimentos e insumos de produção ficam em matéria-prima/envase (1010) ou produto pronto; móveis e equipamentos são ativos (800).',
+    800: 'Ativos (800) são bens duráveis, como móveis e equipamentos. Itens de consumo e limpeza são suprimentos (700).',
+  }[String(prefixoPedido)] ?? 'Confira se a família escolhida no formulário é a certa para estes produtos.';
+  return `Dúvida sobre a família deste pedido (solicitação #${id} · IA do SKBiscoitê):\n\n${linhas.join('\n')}\n\nO pedido veio como ${nomeDaFamilia(prefixoPedido)}. ${explicacao}\n\nÉ isso mesmo ou o pedido deve ir para outra família? Pode responder aqui na tarefa. A equipe de TI confere antes de criar qualquer código.`;
+}
+
+// Confere a solicitação: grava o parecer, avisa nos itens e nos motivos e manda para análise se houver divergência.
+// `comentar(sql, id, texto)` (opcional) deixa a dúvida na tarefa do ClickUp; devolve { enviado, motivo }.
+export async function conferirFamilia(sql = sqlPadrao, id, { ia = perguntarFamiliaIA, comentar = null } = {}) {
   const [s] = await sql`SELECT id, titulo, status, rota, familia_campo, prefixo_codigo, familia_prefixo, motivos FROM solicitacoes WHERE id = ${id}`;
   if (!s) throw new Error('Solicitação não encontrada.');
   if (s.rota === 'alteracao') return { conferida: false, motivo: 'Pedido de alteração: não há família a conferir.' };
@@ -82,5 +114,7 @@ export async function conferirFamilia(sql = sqlPadrao, id, { ia = perguntarFamil
   if (diverge.length) motivos.push(`IA: ${diverge.length === 1 ? 'um produto parece' : `${diverge.length} produtos parecem`} de outra família (${[...new Set(diverge.map((d) => nomeDaFamilia(d.prefixo)))].join(', ')}), e o pedido veio como ${nomeDaFamilia(prefixo)}. Confira antes de aprovar.`);
   const parecer = { em: new Date().toISOString(), familia_pedida: prefixo, itens: pareceres.filter(Boolean).map((p) => ({ ...p, diverge: diverge.includes(p) })) };
   await sql`UPDATE solicitacoes SET ia_familia = ${JSON.stringify(parecer)}::jsonb, motivos = ${JSON.stringify(motivos)}::jsonb, sugestao = ${motivos.length ? 'analise' : 'automatica'}, atualizado_em = now() WHERE id = ${id}`;
-  return { conferida: true, divergencias: diverge.length, parecer };
+  let comentario = null;
+  if (diverge.length && comentar) comentario = await comentarDuvida(sql, id, prefixo, diverge, comentar);
+  return { conferida: true, divergencias: diverge.length, parecer, comentario };
 }

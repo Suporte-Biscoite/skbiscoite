@@ -88,10 +88,9 @@ export async function validarLote(sql, itensBrutos) {
 }
 
 // Valida e grava os itens válidos como pendentes. Os inválidos voltam bloqueados, com o motivo.
-export async function criarLote(sql, usuario, itensBrutos) {
+export async function criarLote(sql, usuario, itensBrutos, { loteId = crypto.randomUUID() } = {}) {
   const resultados = await validarLote(sql, itensBrutos);
   const validos = resultados.filter((r) => r.erros.length === 0);
-  const loteId = crypto.randomUUID();
 
   if (validos.length > 0) {
     const col = (fn) => validos.map(fn);
@@ -106,6 +105,17 @@ export async function criarLote(sql, usuario, itensBrutos) {
     criados: validos.length,
     bloqueados: resultados.filter((r) => r.erros.length > 0).map(({ linha, descricao, erros }) => ({ linha, descricao, erros })),
   };
+}
+
+// Produto que JÁ existe no Omie com o código certo: não recadastra no Omie (omie 'ok' desde já). Só o Nexaas passa pela fila.
+// Cada item: { linha, descricao (nome do Omie), codigo, codigoProduto, item (de validarItem) }.
+export async function registrarJaCadastrados(sql, usuario, loteId, lista) {
+  for (const r of lista) {
+    const [ja] = await sql`SELECT id FROM cadastros WHERE codigo = ${r.codigo}`;
+    if (ja) throw new Error(`O código ${r.codigo} já consta no Histórico do sistema (cadastro #${ja.id}). Confira lá antes de pedir de novo.`);
+    await sql`INSERT INTO cadastros (lote_id, linha, usuario_email, descricao, ncm, entra_na_loja, sazonal, familia_base, familia_prefixo, familia_omie, categoria_nexaas, codigo, acao, omie_status, omie_id, nexaas_status)
+      VALUES (${loteId}::uuid, ${r.linha}, ${usuario.email}, ${r.descricao}, ${r.item.ncm}, ${r.item.entraNaLoja}, false, ${r.item.familia.familia}, ${r.item.familia.prefixo}, ${nomeFamiliaOmie(r.item)}, ${nomeCategoriaNexaas(r.item)}, ${r.codigo}, 'JaCadastrado', 'ok', ${r.codigoProduto ?? null}, 'pendente')`;
+  }
 }
 
 // ---------- Reserva atômica de código ----------
@@ -212,7 +222,7 @@ async function etapaNexaas(sql, cadastro) {
       });
       nexaasId = (await criarProdutoNexaas(corpo)).product?.id;
     }
-    const [atualizado] = await sql`UPDATE cadastros SET nexaas_status = 'ok', nexaas_erro = NULL, nexaas_id = ${nexaasId ?? null}, atualizado_em = now() WHERE id = ${cadastro.id} RETURNING *`;
+    const [atualizado] = await sql`UPDATE cadastros SET nexaas_status = 'ok', nexaas_erro = NULL, nexaas_id = ${nexaasId ?? null}, nexaas_origem = ${existente ? 'ja_existia' : 'criado'}, atualizado_em = now() WHERE id = ${cadastro.id} RETURNING *`;
     return atualizado;
   } catch (erro) {
     const [atualizado] = await sql`UPDATE cadastros SET nexaas_status = 'erro', nexaas_erro = ${erro.message}, atualizado_em = now() WHERE id = ${cadastro.id} RETURNING *`;
@@ -269,7 +279,7 @@ export async function reprocessar(sql, loteId, { id = null } = {}) {
 
 export async function estadoDoLote(sql, loteId) {
   const itens = await sql`SELECT id, linha, descricao, codigo, familia_omie, categoria_nexaas, entra_na_loja, sazonal,
-      omie_status, omie_erro, omie_id, nexaas_status, nexaas_erro, nexaas_id, acao
+      omie_status, omie_erro, omie_id, nexaas_status, nexaas_erro, nexaas_id, acao, nexaas_origem
     FROM cadastros WHERE lote_id = ${loteId}::uuid ORDER BY id`;
   const terminou = (i) => i.omie_status === 'erro' || (i.omie_status === 'ok' && ['ok', 'erro'].includes(i.nexaas_status));
   return { itens, concluido: itens.length > 0 && itens.every(terminou) };

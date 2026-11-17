@@ -19,8 +19,8 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM'];
-const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO'];
+const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902')`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -274,6 +274,46 @@ try {
   await conferirFamilia(sql, fam.id, { ia: async (_t, _f, nomes) => nomes.map((d) => ({ descricao: d, prefixo: '700', confianca: 'alta', motivo: '' })) });
   s = await detalharSolicitacao(sql, fam.id); assert.equal(s.sugestao, 'automatica'); assert.equal(s.motivos.length, 0);
   ok('a IA aponta item de outra família, vira alerta (sem alertas só quando some), e repetir não duplica');
+  console.log('Dúvida da IA comentada na tarefa (uma vez por dúvida)');
+  const duvidas = [];
+  const comentarOk = async (_s, _id, texto) => { duvidas.push(texto); return { enviado: true }; };
+  const iaMescla = async (_t, _f, nomes) => nomes.map((d) => ({ descricao: d, prefixo: '1010', confianca: 'alta', motivo: 'é um insumo de produção' }));
+  const f1 = await receberTarefa(sql, tarefa('TESTE-FAM', 'Mesclado', 'MESCLADO CHOCOLATE AVELA TESTE', 'SUPRIMENTOS(700)'), { origem: 'teste', familiaIA: async () => { throw new Error('IA fora'); } });
+  const d1 = await conferirFamilia(sql, f1.id, { ia: iaMescla, comentar: comentarOk });
+  assert.equal(d1.comentario.enviado, true); assert.equal(duvidas.length, 1);
+  assert.ok(duvidas[0].includes('MESCLADO CHOCOLATE AVELA') && duvidas[0].includes('1010') && duvidas[0].includes(`#${f1.id}`) && duvidas[0].includes('Suprimentos (700)'));
+  const d2 = await conferirFamilia(sql, f1.id, { ia: iaMescla, comentar: comentarOk });
+  assert.equal(d2.comentario.enviado, false); assert.equal(duvidas.length, 1); // mesma dúvida: não repete
+  await sql`UPDATE solicitacoes SET ia_comentado_hash = NULL WHERE id = ${f1.id}`;
+  const desligado = await conferirFamilia(sql, f1.id, { ia: iaMescla, comentar: async () => ({ enviado: false, motivo: 'desligado' }) });
+  assert.equal(desligado.comentario.enviado, false);
+  const [{ ia_comentado_hash: h1 }] = await sql`SELECT ia_comentado_hash FROM solicitacoes WHERE id = ${f1.id}`; assert.equal(h1, null); // desligado não gasta a dúvida
+  const falha = await conferirFamilia(sql, f1.id, { ia: iaMescla, comentar: async () => { throw new Error('ClickUp fora'); } });
+  assert.equal(falha.comentario.enviado, false);
+  const d3 = await conferirFamilia(sql, f1.id, { ia: iaMescla, comentar: comentarOk });
+  assert.equal(d3.comentario.enviado, true); assert.equal(duvidas.length, 2); // ligou depois: agora comenta
+  ok('a IA comenta uma vez por dúvida; desligado ou falha não consome a dúvida; ao ligar, comenta');
+
+  console.log('Produto já cadastrado no Omie: reaproveita o código certo, bloqueia o errado');
+  await sql`INSERT INTO omie_produtos (codigo, descricao, descricao_norm, codigo_produto, inativo) VALUES ('7009901', 'PRODUTO FICTICIO REUSO TESTE', 'PRODUTO FICTICIO REUSO TESTE', 1234, false), ('99998', 'PRODUTO FICTICIO ERRADO TESTE', 'PRODUTO FICTICIO ERRADO TESTE', 1235, false)`;
+  const ru = await receberTarefa(sql, tarefa('TESTE-REUSO', 'Reuso', 'TESTE REUSO PRODUTO FICTICIO\nPRODUTO FICTICIO ERRADO TESTE', 'SUPRIMENTOS(700)'), { origem: 'teste', familiaIA: null });
+  s = await detalharSolicitacao(sql, ru.id);
+  assert.ok(s.itens[0].avisos.some((a) => a.includes('reaproveitado')) && s.itens[0].parecidos[0].situacao === 'correto');
+  assert.ok(s.itens[1].avisos.some((a) => a.includes('fora do padrão')));
+  await editarItens(sql, usuario, ru.id, { itens: s.itens.map((i) => ({ ...i, ncm: '84198190' })) });
+  await assert.rejects(() => aprovarECriar(sql, usuario, ru.id, SEM_PROCESSAR), /fora do padrão/); // 99998 bloqueia tudo, nada é criado
+  assert.equal((await sql`SELECT count(*)::int AS n FROM cadastros WHERE codigo = '7009901'`)[0].n, 0);
+  s = await detalharSolicitacao(sql, ru.id); assert.equal(s.lote_id, null); assert.equal(s.status, 'aguardando_analise');
+  await editarItens(sql, usuario, ru.id, { itens: s.itens.filter((i) => i.descricao.includes('REUSO')).map((i) => ({ ...i, ncm: '84198190' })) });
+  await aprovarECriar(sql, usuario, ru.id, SEM_PROCESSAR);
+  const [cad] = await sql`SELECT * FROM cadastros WHERE codigo = '7009901'`;
+  assert.equal(cad.acao, 'JaCadastrado'); assert.equal(cad.omie_status, 'ok'); assert.equal(cad.nexaas_status, 'pendente'); assert.equal(cad.familia_prefixo, '700'); assert.equal(String(cad.omie_id), '1234');
+  s = await detalharSolicitacao(sql, ru.id);
+  assert.equal(s.itens[0].codigo_gerado, '7009901'); assert.equal(s.itens[0].cadastro_id, cad.id);
+  const { linhaDoComentario } = await import('../api/_lib/solicitacoes.js');
+  assert.ok(linhaDoComentario({ codigo_gerado: '7009901', descricao: 'X', acao: 'JaCadastrado', nexaas_origem: 'criado', descricao_omie: 'PRODUTO OMIE' }).includes('já estava cadastrado no Omie; cadastrado agora no Nexaas'));
+  assert.ok(linhaDoComentario({ codigo_gerado: '4000001', descricao: 'Y', acao: null }).includes('criado agora'));
+  ok('nome igual com código certo é reaproveitado (Omie não é recadastrado, só o Nexaas fica na fila); código fora do padrão bloqueia tudo sem criar nada');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);
