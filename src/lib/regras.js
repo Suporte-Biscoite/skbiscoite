@@ -53,9 +53,12 @@ export function nomeCategoriaNexaas(item) {
 
 // Confere UM item antes de qualquer envio. Devolve { erros: [...], item } com o item já normalizado.
 // (A existência da família sazonal no Omie/Nexaas é conferida no servidor, que conhece as listas.)
+// Regra da casa: todo produto sobe em MAIÚSCULAS e SEM ACENTO (ex.: "Dobrável" -> "DOBRAVEL"), com espaços simples.
+export const padronizarNome = (valor) => String(valor ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+
 export function validarItem(bruto) {
   const erros = [];
-  const descricao = String(bruto.descricao ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const descricao = padronizarNome(bruto.descricao);
   if (!descricao) erros.push('Informe a descrição.');
   else if (descricao.length > LIMITE_DESCRICAO) erros.push(`Descrição com mais de ${LIMITE_DESCRICAO} caracteres.`);
 

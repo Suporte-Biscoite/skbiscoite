@@ -45,7 +45,7 @@ export async function aprovarECriar(sql = sqlPadrao, usuario, id, opcoes = {}) {
   const problemas = resultados.filter((r) => r.erros.length).map((r) => `${r.descricao || `item ${r.linha}`}: ${r.erros.join(' ')}`);
   if (problemas.length) throw new Error(`Não dá para criar ainda. ${problemas.join(' | ')}`);
 
-  for (const i of itens) await sql`UPDATE solicitacao_itens SET ncm = ${i.ncm}, ncm_padrao = ${i.ncmPadrao} WHERE id = ${i.id}`;
+  for (const [k, i] of itens.entries()) await sql`UPDATE solicitacao_itens SET ncm = ${i.ncm}, ncm_padrao = ${i.ncmPadrao}, descricao = ${resultados[k].item.descricao} WHERE id = ${i.id}`;
 
   // Trava atômica: duas aprovações ao mesmo tempo nunca criam dois lotes.
   const [trava] = await sql`UPDATE solicitacoes SET status = 'na_fila', na_fila_em = now(), decidido_por = COALESCE(decidido_por, ${usuario.email}), decidido_em = COALESCE(decidido_em, now()), atualizado_em = now()

@@ -56,6 +56,11 @@ test('título e campo em conflito vão para análise', () => {
   assert.equal(b.sugestao, 'analise');
 });
 
+test('nomes sobem em MAIÚSCULAS e SEM ACENTO', () => {
+  const a = analisarSolicitacao(tarefa('x', 'Caixa Organizadora Dobrável com Polia Giratória\ncafé em pó 500g', 'ATIVO(800)'));
+  assert.deepEqual(a.itens.map((i) => i.descricao), ['CAIXA ORGANIZADORA DOBRAVEL COM POLIA GIRATORIA', 'CAFE EM PO 500G']);
+});
+
 test('SUPRIMENTOS(700) sem faixa no título NÃO pede análise: o código nasce do prefixo 700, em sequência', () => {
   for (const fam of ['SUPRIMENTOS', 'SUPRIMENTOS(700)']) {
     const a = analisarSolicitacao(tarefa('Gaveteiro Organizador', 'GAVETEIRO ORGANIZADOR PLÁSTICO', fam));
