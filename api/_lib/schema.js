@@ -90,6 +90,9 @@ export function garantirEsquema(sql = sqlPadrao) {
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS encerrada_em timestamptz`;
     // Criação a partir da aprovação: fila (lote), etapas e erros de cada etapa.
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS lote_id uuid`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_hash text`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_motivo text`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS auto_avaliada_em timestamptz`
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS na_fila_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS codigos_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentario_erro text`;

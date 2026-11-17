@@ -8,6 +8,7 @@ import { chaveDoEvento } from '../api/_lib/clickup.js';
 import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '../api/_lib/criacao.js';
 import { gravarNcmPadrao, listarParaRevisarNcm, revisarNcm } from '../api/_lib/ncm.js';
 import { lerNotaDaSolicitacao } from '../api/_lib/nota.js';
+import { processarFilaAutomatica, ROBO } from '../api/_lib/automatico.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
 await garantirEsquema();
@@ -17,8 +18,8 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA'];
-const limpar = async () => { await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5'];
+const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -80,10 +81,10 @@ try {
   ok('aprovada (sem criar nada), recusa exige motivo, decisão não se repete, tudo auditado');
   const antes = await lerConfig(sql);
   await gravarConfig(sql, usuario, { pausado: true });
+  await assert.rejects(() => gravarConfig(sql, usuario, { modo: 'qualquer-coisa' }));
   assert.equal((await lerConfig(sql)).pausado, true);
-  await assert.rejects(() => gravarConfig(sql, usuario, { modo: 'automatico' }));
-  await gravarConfig(sql, usuario, { pausado: antes.pausado, modo: antes.modo });
-  ok('pausa liga/desliga; modo "automatico" é recusado nesta fase');
+  await gravarConfig(sql, usuario, { pausado: antes.pausado, modo: antes.modo }); // a configuração real nunca fica alterada pelo teste
+  ok('pausa liga/desliga; modo inválido é recusado');
   const lista = await listarSolicitacoes(sql, { busca: 'teste fictício' });
   assert.ok(lista.length >= 2);
   ok('listagem com busca');
@@ -205,6 +206,49 @@ try {
   const semChave = await lerNotaDaSolicitacao(sql, usuario, nt.id, { ...prender, ia: async () => assert.fail('sem chave não chama a IA') });
   assert.equal(semChave.achados, 1);
   ok('sem PDF avisa; sem chave da IA a leitura direta continua funcionando');
+  console.log('Criação automática (sempre restrita às tarefas de teste, nunca à fila real)');
+  const novaAuto = (id, titulo, nome, familia) => receberTarefa(sql, tarefa(id, titulo, nome, familia), { origem: 'teste' });
+  const a1 = await novaAuto('TESTE-AUTO1', 'Pedido ok', 'PRODUTO FICTICIO CRIACAO AUTO UM', 'EXTERNO(300)');
+  const a2 = await novaAuto('TESTE-AUTO2', 'Pedido VETO da IA', 'PRODUTO FICTICIO CRIACAO AUTO DOIS', 'INTERNO(400)');
+  const a3 = await novaAuto('TESTE-AUTO3', 'Pedido sem nota', 'PRODUTO FICTICIO CRIACAO AUTO TRES', 'SUPRIMENTOS(700)');
+  const todosIds = [a1.id, a2.id, a3.id];
+  const iaFalsa = async (sol) => (sol.titulo.includes('VETO') ? { ok: false, motivo: 'parece comentário' } : { ok: true, motivo: '' });
+  const semNota = async () => { throw new Error('A tarefa não tem nota em PDF anexada.'); };
+  const base = { ia: iaFalsa, lerNota: semNota, ids: todosIds, avancarOpcoes: SEM_PROCESSAR, chaveUltima: 'auto_ultima_criacao_teste' };
+  const config = (modo, extra = {}) => ({ modo, pausado: false, intervaloMinutos: 10, limiteAutoPorDia: 500, ...extra });
+
+  assert.equal((await processarFilaAutomatica(sql, { ...base, configExtra: config('analisar') })).avaliadas, 0);
+  assert.equal((await processarFilaAutomatica(sql, { ...base, configExtra: config('automatico', { pausado: true }) })).avaliadas, 0);
+  ok('modo "Só analisar" e pausa: o robô não faz nada');
+
+  const sim = await processarFilaAutomatica(sql, { ...base, configExtra: config('simulacao') });
+  assert.equal(sim.avaliadas, 3); assert.equal(sim.simuladas, 1); assert.equal(sim.paraAnalise, 2); assert.equal(sim.criadas, 0);
+  s = await detalharSolicitacao(sql, a1.id); assert.equal(s.lote_id, null); assert.ok(s.auto_motivo.startsWith('Simulação'));
+  s = await detalharSolicitacao(sql, a2.id); assert.ok(s.auto_motivo.startsWith('IA:') && s.auto_motivo.includes('comentário'));
+  s = await detalharSolicitacao(sql, a3.id); assert.ok(s.auto_motivo.includes('NCM da nota'));
+  assert.equal((await processarFilaAutomatica(sql, { ...base, configExtra: config('simulacao') })).avaliadas, 0); // não reavalia igual
+  ok('simulação: avalia, registra o motivo de cada uma e não cria nada');
+
+  const agora = Date.now();
+  const rodada = await processarFilaAutomatica(sql, { ...base, agora, configExtra: config('automatico') });
+  assert.equal(rodada.criadas, 1); assert.equal(rodada.paraAnalise, 0);
+  s = await detalharSolicitacao(sql, a1.id);
+  assert.ok(['na_fila', 'processando'].includes(s.status)); assert.equal(s.decidido_por, ROBO.email); assert.deepEqual(s.itens.map((i) => i.ncm), ['19059020']); assert.ok(s.itens[0].ncm_padrao);
+  s = await detalharSolicitacao(sql, a2.id); assert.equal(s.status, 'aguardando_analise'); // a IA barrou: fica para uma pessoa
+  ok('automático: cria só a que passou nas regras e na IA (NCM padrão marcado para revisão); a barrada fica para análise');
+
+  const a4 = await novaAuto('TESTE-AUTO4', 'Pedido ok 2', 'PRODUTO FICTICIO CRIACAO AUTO QUATRO', 'INTERNO(400)');
+  const a5 = await novaAuto('TESTE-AUTO5', 'Pedido ok 3', 'PRODUTO FICTICIO CRIACAO AUTO CINCO', 'EMBALAGEM(200)');
+  const base2 = { ...base, ids: [a4.id, a5.id] };
+  const cedo = await processarFilaAutomatica(sql, { ...base2, agora: agora + 60000, configExtra: config('automatico') });
+  assert.equal(cedo.criadas, 0); assert.equal(cedo.aguardandoIntervalo, true);
+  const capado = await processarFilaAutomatica(sql, { ...base2, agora: agora + 11 * 60000, configExtra: config('automatico', { limiteAutoPorDia: 1 }) });
+  assert.equal(capado.criadas, 0); assert.equal(capado.aguardandoIntervalo, true);
+  const depois = await processarFilaAutomatica(sql, { ...base2, agora: agora + 11 * 60000, configExtra: config('automatico') });
+  assert.equal(depois.criadas, 1);
+  s = await detalharSolicitacao(sql, a4.id); assert.ok(['na_fila', 'processando'].includes(s.status));
+  ok('intervalo entre solicitações e limite por dia são respeitados (uma por rodada)');
+  await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`;
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

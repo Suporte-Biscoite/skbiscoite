@@ -3,6 +3,7 @@
     "api/sincronizar.js": { "maxDuration": 60 },
     "api/lotes.js": { "maxDuration": 60 },
     "api/importar.js": { "maxDuration": 60 },
-    "api/solicitacoes.js": { "maxDuration": 60 }
+    "api/solicitacoes.js": { "maxDuration": 60 },
+    "api/clickup-conferir.js": { "maxDuration": 60 }
   }
 }
