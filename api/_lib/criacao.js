@@ -75,6 +75,8 @@ export async function aprovarECriar(sql = sqlPadrao, usuario, id, opcoes = {}) {
     await sql`UPDATE solicitacoes SET lote_id = ${loteId}::uuid WHERE id = ${id}`;
     const cadastros = await sql`SELECT id, linha FROM cadastros WHERE lote_id = ${loteId}::uuid`;
     for (const c of cadastros) await sql`UPDATE solicitacao_itens SET cadastro_id = ${c.id}, status = 'na_fila' WHERE solicitacao_id = ${id} AND ordem = ${c.linha}`;
+    // Guarda o nome original da nota junto com o cadastro (quando a IA/pessoa trocou por um nome limpo).
+    await sql`UPDATE cadastros SET nome_original = i.nome_original FROM solicitacao_itens i WHERE i.cadastro_id = cadastros.id AND i.solicitacao_id = ${id} AND i.nome_original IS NOT NULL`;
     await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, ${usuario.email}, 'aprovada', ${JSON.stringify({ itens: itens.length, prefixo, reaproveitados: reaproveitados.map(({ d }) => d.codigo) })}::jsonb)`;
   } catch (erro) {
     // Nada foi enviado ao Omie/Nexaas ainda: desfaz as linhas da fila deste lote (assim uma nova tentativa não esbarra em código reservado).

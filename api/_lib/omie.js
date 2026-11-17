@@ -24,7 +24,8 @@ export async function chamarOmie(rota, call, param, { tentativas = 4, timeoutMs 
   for (let tentativa = 1; ; tentativa++) {
     let resposta, dados;
     try {
-      resposta = await fetch(`${BASE}/${rota}/`, {
+      // "produtos" -> /geral/produtos/ ; "estoque/consulta" -> /estoque/consulta/ (rota com barra já inclui o grupo)
+      resposta = await fetch(rota.includes('/') ? `https://app.omie.com.br/api/v1/${rota}/` : `${BASE}/${rota}/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ call, app_key, app_secret, param: [param] }),
@@ -67,4 +68,8 @@ export const listarProdutosOmie = ({ pagina, desde } = {}) =>
 
 export const incluirProdutoOmie = (produto) => chamarOmie('produtos', 'IncluirProduto', produto);
 export const alterarProdutoOmie = (produto) => chamarOmie('produtos', 'AlterarProduto', produto);
+// Inativar/reativar: o Omie manda usar AlterarSituacaoProduto (o campo "inativo" do AlterarProduto é somente leitura). Chave: codigo_produto.
+export const alterarSituacaoProdutoOmie = (dados) => chamarOmie('produtos', 'AlterarSituacaoProduto', dados);
+// Saldo, reservado e pendente de UM produto (id_prod = codigo_produto do Omie; data dd/mm/aaaa).
+export const posicaoEstoqueOmie = (dados) => chamarOmie('estoque/consulta', 'PosicaoEstoque', { codigo_local_estoque: 0, ...dados });
 export const consultarProdutoOmie = (filtro) => chamarOmie('produtos', 'ConsultarProduto', filtro);

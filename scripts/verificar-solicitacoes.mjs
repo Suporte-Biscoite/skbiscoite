@@ -9,6 +9,8 @@ import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '.
 import { gravarNcmPadrao, listarParaRevisarNcm, revisarNcm } from '../api/_lib/ncm.js';
 import { lerNotaDaSolicitacao } from '../api/_lib/nota.js';
 import { conferirFamilia } from '../api/_lib/familia-ia.js';
+import { aplicarCorrecao, desfazerCorrecao, proporCorrecao } from '../api/_lib/correcao.js';
+import { sugerirNomesDaSolicitacao } from '../api/_lib/nome-ia.js';
 import { processarFilaAutomatica, ROBO } from '../api/_lib/automatico.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
@@ -19,8 +21,8 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO'];
-const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902')`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO', 'TESTE-NOME'];
+const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902', '99997')`; await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`; await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`; await sql`DELETE FROM sync_meta WHERE chave LIKE 'busca_web_teste%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -314,6 +316,82 @@ try {
   assert.ok(linhaDoComentario({ codigo_gerado: '7009901', descricao: 'X', acao: 'JaCadastrado', nexaas_origem: 'criado', descricao_omie: 'PRODUTO OMIE' }).includes('já estava cadastrado no Omie; cadastrado agora no Nexaas'));
   assert.ok(linhaDoComentario({ codigo_gerado: '4000001', descricao: 'Y', acao: null }).includes('criado agora'));
   ok('nome igual com código certo é reaproveitado (Omie não é recadastrado, só o Nexaas fica na fila); código fora do padrão bloqueia tudo sem criar nada');
+  console.log('Corrigir cadastro antigo (Omie SIMULADO; nada real é alterado)');
+  {
+    const omieSim = { descricao: 'MOINHO TESTE FORA DA FAIXA', inativo: 'N', codigo_produto: 555001, codigo: '99997', ncm: '84198190', unidade: 'UN', valor_unitario: 0 };
+    const chamadas = [];
+    const consultar = async () => ({ ...omieSim });
+    const alterar = async (c) => { chamadas.push(['alterar', c]); };
+    const situacao = async (c) => { chamadas.push(['situacao', c]); };
+    const semMovimento = async () => ({ saldo: 0, reservado: 0, pendente: 0 });
+    const nexaasNao = async () => null;
+    await sql`INSERT INTO omie_produtos (codigo, descricao, descricao_norm, codigo_produto, inativo) VALUES ('99997', 'MOINHO TESTE FORA DA FAIXA', 'MOINHO TESTE FORA DA FAIXA', 555001, false)`;
+
+    await assert.rejects(() => proporCorrecao(sql, usuario, '7004083', { consultar, estoque: semMovimento, nexaas: nexaasNao }), /segue o padrão/);
+    const bloq = await proporCorrecao(sql, usuario, '99997', { consultar, estoque: async () => ({ saldo: 5, reservado: 0, pendente: 0 }), nexaas: nexaasNao });
+    assert.equal(bloq.estado, 'bloqueada'); assert.ok(bloq.bloqueios[0].includes('saldo'));
+    await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`;
+
+    const prop = await proporCorrecao(sql, usuario, '99997', { solicitacaoId: null, consultar, estoque: semMovimento, nexaas: async () => ({ product_id: 77, name: '99997 - MOINHO' }) });
+    assert.equal(prop.estado, 'proposta'); assert.equal(prop.depois.descricao, 'CADASTRO ERRADO - MOINHO TESTE FORA DA FAIXA (INATIVO)');
+    assert.deepEqual(prop.nao_verificado, ['movimentações', 'pedidos e notas']); assert.equal(prop.nexaas.existe, true); assert.equal(prop.antes.codigo_produto, 555001);
+    await assert.rejects(() => proporCorrecao(sql, usuario, '99997', { consultar, estoque: semMovimento, nexaas: nexaasNao }), /Já existe uma correção/);
+    assert.equal(chamadas.length, 0); // propor é só leitura
+
+    delete process.env.OMIE_CORRECAO_ATIVA;
+    await assert.rejects(() => aplicarCorrecao(sql, usuario, prop.id, { consultar, alterar, situacao }), /desligada/);
+    process.env.OMIE_CORRECAO_ATIVA = '1';
+    try {
+      await assert.rejects(() => aplicarCorrecao(sql, usuario, prop.id, { consultar, alterar, situacao }), /Confirme que conferiu/);
+      assert.equal(chamadas.length, 0);
+      // O passo 2 falha uma vez: o passo 1 não repete.
+      let falhou = false;
+      const situacaoFalha = async (c) => { if (!falhou) { falhou = true; throw new Error('Omie fora do ar'); } chamadas.push(['situacao', c]); };
+      await assert.rejects(() => aplicarCorrecao(sql, usuario, prop.id, { confirmouConferencia: true, consultar, alterar, situacao: situacaoFalha }), /fora do ar/);
+      assert.equal((await sql`SELECT estado FROM correcoes_cadastro WHERE id = ${prop.id}`)[0].estado, 'erro');
+      const feita = await aplicarCorrecao(sql, usuario, prop.id, { confirmouConferencia: true, consultar: async () => ({ ...omieSim, descricao: 'MOINHO TESTE FORA DA FAIXA' }), alterar, situacao: situacaoFalha });
+      assert.equal(feita.estado, 'aplicada'); assert.equal(feita.aprovado_por, usuario.email);
+      assert.equal(chamadas.filter((c) => c[0] === 'alterar').length, 1); // renomear só uma vez
+      assert.deepEqual(chamadas.find((c) => c[0] === 'alterar')[1], { codigo_produto: 555001, codigo: '99997', unidade: 'UN', ncm: '84198190', valor_unitario: 0, descricao: 'CADASTRO ERRADO - MOINHO TESTE FORA DA FAIXA (INATIVO)' });
+      assert.deepEqual(chamadas.find((c) => c[0] === 'situacao')[1], { codigo_produto: 555001, inativo: 'S' });
+      const [esp] = await sql`SELECT descricao, inativo FROM omie_produtos WHERE codigo = '99997'`; assert.equal(esp.inativo, true); assert.ok(esp.descricao.startsWith('CADASTRO ERRADO'));
+      assert.equal((await aplicarCorrecao(sql, usuario, prop.id, { consultar, alterar, situacao })).estado, 'aplicada'); // repetir não faz nada
+      assert.equal(chamadas.filter((c) => c[0] === 'alterar').length, 1);
+      const des = await desfazerCorrecao(sql, usuario, prop.id, { alterar, situacao });
+      assert.equal(des.estado, 'desfeita');
+      assert.deepEqual(chamadas.filter((c) => c[0] === 'alterar').pop()[1].descricao, 'MOINHO TESTE FORA DA FAIXA');
+      assert.deepEqual(chamadas.filter((c) => c[0] === 'situacao').pop()[1], { codigo_produto: 555001, inativo: 'N' });
+      const [volta] = await sql`SELECT descricao, inativo FROM omie_produtos WHERE codigo = '99997'`; assert.equal(volta.inativo, false); assert.equal(volta.descricao, 'MOINHO TESTE FORA DA FAIXA');
+    } finally { delete process.env.OMIE_CORRECAO_ATIVA; }
+    ok('correção: só lê ao propor; bloqueia com saldo; exige confirmação do que não dá para verificar; cada passo no Omie roda uma vez; auditoria e desfazer funcionam');
+  }
+
+  console.log('Nome sujo: IA sugere (pesquisa simulada), pessoa decide, nome original fica guardado');
+  {
+    const nome = await receberTarefa(sql, tarefa('TESTE-NOME', 'Cadastro máquina', 'TESTE NOME SUJO S40 SUPREMA 3GR BIANCA', 'ATIVO(800)'), { origem: 'teste', familiaIA: null });
+    let pesquisas = 0;
+    const pesquisar = async () => { pesquisas++; return { texto: 'La Spaziale S40 Suprema', fontes: [{ url: 'https://exemplo.com/s40', titulo: 'S40' }] }; };
+    const organizar = async () => ({ identificado: true, nome_sugerido: 'Maquina de Cafe La Spaziale S40 Suprema 3 Grupos', marca: 'La Spaziale', modelo: 'S40 Suprema', familia_sugerida: '800', confianca: 'alta', resumo: 'ok', ncm_provavel: '' });
+    const estilo = { geral: [], porFamilia: {} };
+    const r = await sugerirNomesDaSolicitacao(sql, usuario, nome.id, { contador: 'busca_web_teste', estilo, pesquisar, organizar });
+    assert.equal(r.sugeridos, 1); assert.equal(pesquisas, 1);
+    s = await detalharSolicitacao(sql, nome.id);
+    assert.equal(s.itens[0].nome_ia.nome_sugerido, 'MAQUINA DE CAFE LA SPAZIALE S40 SUPREMA 3 GRUPOS'); assert.equal(s.itens[0].descricao, 'TESTE NOME SUJO S40 SUPREMA 3GR BIANCA'); // a IA nunca troca sozinha
+    await sugerirNomesDaSolicitacao(sql, usuario, nome.id, { contador: 'busca_web_teste', estilo, pesquisar, organizar });
+    assert.equal(pesquisas, 1); // segunda vez: cache
+    await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`;
+    const limite = await sugerirNomesDaSolicitacao(sql, usuario, nome.id, { contador: 'busca_web_teste', estilo, pesquisar, organizar, limiteDia: 0 });
+    assert.ok(limite.erros[0].includes('Limite diário')); assert.equal(pesquisas, 1);
+    // pessoa aceita: troca o nome e guarda o original (round-trip pelo editar), que segue para o cadastro
+    const it = s.itens[0];
+    await editarItens(sql, usuario, nome.id, { itens: [{ ...it, nome_original: it.descricao, descricao: it.nome_ia.nome_sugerido, nome_ia: { ...it.nome_ia, decisao: 'aceito' }, ncm: '84198190' }] });
+    s = await detalharSolicitacao(sql, nome.id);
+    assert.equal(s.itens[0].nome_original, 'TESTE NOME SUJO S40 SUPREMA 3GR BIANCA'); assert.equal(s.itens[0].nome_ia.decisao, 'aceito');
+    assert.equal(s.itens[0].descricao, 'MAQUINA DE CAFE LA SPAZIALE S40 SUPREMA 3 GRUPOS');
+    const { linhaDoComentario } = await import('../api/_lib/solicitacoes.js');
+    assert.ok(linhaDoComentario({ codigo_gerado: '8000001', descricao: s.itens[0].descricao, nome_original: s.itens[0].nome_original, acao: null }).includes('[nome na nota: TESTE NOME SUJO S40 SUPREMA 3GR BIANCA]'));
+    ok('a IA sugere com fonte e confiança, não troca sozinha, usa cache, respeita o limite diário e o nome da nota fica guardado');
+  }
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);
