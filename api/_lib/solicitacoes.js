@@ -6,6 +6,7 @@ import { lerEstado, gravarEstado } from './catalogo.js';
 import { CONFIG_PADRAO, analisarSolicitacao, lerTarefaClickUp, prepararCatalogo } from '../../src/lib/solicitacoes.js';
 import { obterFamiliaPorPrefixo } from '../../src/lib/familias.js';
 import { lerNcmPadrao } from './ncm.js';
+import { conferirFamilia, perguntarFamiliaIA } from './familia-ia.js';
 import { padronizarNome } from '../../src/lib/regras.js';
 import { buscarTarefa, comentarTarefa, listarComentarios, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
 
@@ -62,7 +63,9 @@ async function sincronizarStatus(sql, existente, t) {
 
 // ---------- Entrada de uma tarefa (idempotente) ----------
 // Devolve { resultado: 'nova'|'atualizada'|'sem-mudanca'|'ignorada'|'travada', id }.
-export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalogo = null } = {}) {
+// familiaIA: função que confere a família com a IA (os testes passam uma de mentira). Sem ela, usa a IA real
+// só se houver chave e a tarefa não for de teste. Falha da IA nunca atrapalha a chegada do pedido.
+export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalogo = null, familiaIA = null } = {}) {
   const t = lerTarefaClickUp(tarefaApi);
   if (!t.ehCadastro) return { resultado: 'ignorada', motivo: 'Não é do formulário de cadastro.' };
 
@@ -116,6 +119,8 @@ export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalo
       VALUES (${id}, ${ordem + 1}, ${item.linha}, ${item.original}, ${item.descricao}, ${JSON.stringify(item.avisos)}::jsonb, ${JSON.stringify(item.parecidos || [])}::jsonb, ${item.codigoExistente})`;
   }
   await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${existente ? 'reanalisada' : 'recebida'}, ${JSON.stringify({ itens: analise.itens.length, sugestao: analise.sugestao })}::jsonb)`;
+  const ia = familiaIA ?? (origem !== 'teste' && process.env.OPENAI_API_KEY ? (titulo, familia, nomes) => perguntarFamiliaIA(titulo, familia, nomes, { timeoutMs: 12000 }) : null);
+  if (ia && analise.rota === 'criar' && analise.itens.length) await conferirFamilia(sql, id, { ia }).catch(() => {});
   return { resultado: existente ? 'atualizada' : 'nova', id };
 }
 

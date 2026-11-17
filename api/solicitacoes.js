@@ -12,6 +12,7 @@ import { clickupConfigurado } from './_lib/clickup.js';
 import { lerNotaDaSolicitacao } from './_lib/nota.js';
 import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
 import { processarFilaAutomatica } from './_lib/automatico.js';
+import { conferirFamilia } from './_lib/familia-ia.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
@@ -53,6 +54,11 @@ export default async function handler(req, res) {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
       const leitura = await lerNotaDaSolicitacao(sql, usuario, n);
       return res.status(200).json({ ...(await detalharSolicitacao(sql, n)), leitura });
+    }
+    if (acao === 'conferir-familia') {
+      if (!process.env.OPENAI_API_KEY) return res.status(409).json({ error: 'A chave da IA (OPENAI_API_KEY) não está configurada.' });
+      await conferirFamilia(sql, n);
+      return res.status(200).json(await detalharSolicitacao(sql, n));
     }
     if (acao === 'editar') { await editarItens(sql, usuario, n, { itens, prefixoCodigo }); return res.status(200).json(await detalharSolicitacao(sql, n)); }
     // Aprovar = autorizar a criação desta solicitação (vale mesmo no modo 'Só analisar'); cria na mesma fila do gerador individual.
