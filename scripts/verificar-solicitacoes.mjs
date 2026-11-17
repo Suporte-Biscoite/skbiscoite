@@ -7,6 +7,7 @@ import { garantirEsquema } from '../api/_lib/schema.js';
 import { chaveDoEvento } from '../api/_lib/clickup.js';
 import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '../api/_lib/criacao.js';
 import { gravarNcmPadrao, listarParaRevisarNcm, revisarNcm } from '../api/_lib/ncm.js';
+import { lerNotaDaSolicitacao } from '../api/_lib/nota.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
 await garantirEsquema();
@@ -16,7 +17,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA'];
 const limpar = async () => { await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -184,6 +185,26 @@ try {
   assert.equal((await revisarNcm(sql, usuario, segundo.id, '1', { alterar: async () => assert.fail('repetiu') })).jaRevisado, true);
   assert.equal((await listarParaRevisarNcm(sql)).filter((i) => i.solicitacao_id === nc.id).length, 0);
   ok('revisão: conferido não mexe no Omie; correção altera o Omie preservando preço; repetir não faz nada');
+  console.log('Ler NCM da nota (PDF)');
+  const TEXTO_NOTA = 'DADOS DOS PRODUTOS / SERVIÇOS\nCÓDIGO DESCRIÇÃO NCM/SH CST CFOP UN QUANT\n01 PAPEL HIGIENICO FICTICIO FOLHA DUPLA CAIXA COM 6.000 48181000 000 5102 un 2 167,63 335,26\n02 ITEM COM NOME DIFERENTE NA NOTA 94013000 000 5102 un 1 10,00 10,00\nDADOS ADICIONAIS\n';
+  const nt = await receberTarefa(sql, tarefa('TESTE-NOTA', 'Pedido de cadastro', 'PAPEL HIGIENICO FICTICIO FOLHA DUPLA CAIXA COM 6.000\nCADEIRA FICTICIA PRETA\nPRODUTO FICTICIO SEM NOTA', 'SUPRIMENTOS(700)'), { origem: 'teste' });
+  const tarefaComPdf = { attachments: [{ title: 'nota.pdf', extension: 'pdf', url: 'https://exemplo.invalido/nota.pdf' }] };
+  const prender = { buscarDaTarefa: async () => tarefaComPdf, baixar: async () => Buffer.from('x'), lerPdf: async () => TEXTO_NOTA };
+  process.env.OPENAI_API_KEY = 'chave-de-teste';
+  let perguntas = 0;
+  const iaInventa = async (produtos) => { perguntas++; return produtos.map((p) => ({ produto: p, ncm: p.startsWith('CADEIRA') ? '94013000' : '11112222' })); };
+  const leitura = await lerNotaDaSolicitacao(sql, usuario, nt.id, { ...prender, ia: iaInventa });
+  s = await detalharSolicitacao(sql, nt.id);
+  assert.equal(perguntas, 1); assert.equal(leitura.achados, 2);
+  assert.deepEqual(s.itens.map((i) => i.ncm_sugerido), ['48181000', '94013000', null]); // 11112222 foi inventado: descartado
+  assert.ok(s.itens[0].ncm_fonte.startsWith('Nota, linha 1') && s.itens[1].ncm_fonte.includes('IA'));
+  assert.equal(s.nota_info.itensNota.length, 2);
+  ok('lê a nota: liga pelo nome, usa a IA só no que sobrou e descarta NCM que não existe na nota');
+  delete process.env.OPENAI_API_KEY;
+  await assert.rejects(() => lerNotaDaSolicitacao(sql, usuario, nt.id, { ...prender, buscarDaTarefa: async () => ({ attachments: [] }) }), /PDF anexada/);
+  const semChave = await lerNotaDaSolicitacao(sql, usuario, nt.id, { ...prender, ia: async () => assert.fail('sem chave não chama a IA') });
+  assert.equal(semChave.achados, 1);
+  ok('sem PDF avisa; sem chave da IA a leitura direta continua funcionando');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

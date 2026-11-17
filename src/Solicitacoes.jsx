@@ -22,7 +22,13 @@ const editavel = (s) => ['recebida', 'aguardando_analise'].includes(s.status);
 const podeCriarAgora = (s) => editavel(s) || (s.status === 'aprovada' && !s.lote_id);
 const ICONE = { ok: '✓', andando: '…', erro: '!', pendente: '○', desligado: '–' };
 const PREFIXOS_LOJA = ['300', '400']; // mesma regra do cadastro: só 300/400 entram na loja
-const comPadroes = (lista, prefixo, ncmPadrao) => lista.map((i) => ({ ...i, ncm: i.ncm || ncmPadrao || '', ncm_padrao_da_familia: ncmPadrao || null, entra_na_loja: i.entra_na_loja ?? PREFIXOS_LOJA.includes(String(prefixo)) }));
+// NCM mostrado: o digitado/salvo; se estiver vazio ou for só o padrão da família, a sugestão lida da nota tem preferência.
+const ncmInicial = (i, ncmPadrao) => {
+  const so = (v) => String(v ?? '').replace(/[^0-9]/g, '');
+  const base = so(i.ncm);
+  return i.ncm_sugerido && (!base || base === so(ncmPadrao)) ? i.ncm_sugerido : i.ncm || ncmPadrao || '';
+};
+const comPadroes = (lista, prefixo, ncmPadrao) => lista.map((i) => ({ ...i, ncm: ncmInicial(i, ncmPadrao), ncm_padrao_da_familia: ncmPadrao || null, entra_na_loja: i.entra_na_loja ?? PREFIXOS_LOJA.includes(String(prefixo)) }));
 
 function Chip({ par }) {
   const [texto, tom] = par || ['—', 'espera'];
@@ -98,6 +104,13 @@ export default function Solicitacoes({ api, exibirToast }) {
     if (!salvo) return;
     const d = await acao('aprovar', {}, 'Aprovada: criando os códigos.');
     if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
+  };
+  const lerNota = async () => {
+    const d = await acao('ler-nota', {});
+    if (!d) return;
+    setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia));
+    const l = d.leitura || {};
+    exibirToast(l.achados + ' de ' + l.total + ' NCM(s) encontrados na nota.' + (l.erroIA ? ' A IA não respondeu: ' + l.erroIA : ''), l.achados === l.total ? undefined : 'erro');
   };
   const tentarDeNovo = async (etapa) => {
     const d = await acao('tentar-de-novo', { etapa }, 'Tentando de novo.');
@@ -188,6 +201,8 @@ export default function Solicitacoes({ api, exibirToast }) {
                     {podeCriar && (
                       <div className="sol-criacao">
                         <label>NCM <input className="b-input sol-ncm" inputMode="numeric" maxLength={10} value={i.ncm ?? ''} placeholder={i.ncm_padrao_da_familia ? undefined : 'da nota, 8 números'} aria-label={'NCM do produto ' + (k + 1)} onChange={(e) => mudarItem(k, { ncm: e.target.value.replace(/[^\d.]/g, '') })} /></label>
+                        {i.ncm_sugerido && <span className="sol-meta">Da nota: {i.ncm_fonte}</span>}
+                        {!i.ncm_sugerido && i.ncm_fonte && <span className="sol-meta">Nota: {i.ncm_fonte}</span>}
                         {i.ncm_padrao_da_familia && String(i.ncm).replace(/[^0-9]/g, '') === i.ncm_padrao_da_familia && <span className="sol-meta">NCM padrão da família: será marcado para revisão.</span>}
                         <label className="sol-incluir"><input type="checkbox" checked={!!i.entra_na_loja} onChange={(e) => mudarItem(k, { entra_na_loja: e.target.checked })} /> Entra na loja (PDV)</label>
                       </div>
@@ -221,6 +236,7 @@ export default function Solicitacoes({ api, exibirToast }) {
                   <div className="sol-botoes">
                     <button type="button" className="b-btn-outline cad-mini" onClick={reanalisar} disabled={!!ocupado}>Ler de novo</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={salvar} disabled={!!ocupado}>Salvar edição</button>
+                    <button type="button" className="b-btn-outline cad-mini" onClick={lerNota} disabled={!!ocupado} title="Lê o PDF da nota fiscal anexado na tarefa e sugere o NCM de cada produto">{ocupado === 'ler-nota' ? 'Lendo a nota…' : 'Ler NCM da nota (PDF)'}</button>
                     {podeEditar && <button type="button" className="b-btn-outline cad-mini" onClick={() => setRecusando(true)} disabled={!!ocupado}>Recusar</button>}
                     <button type="button" className="b-btn" onClick={aprovar} disabled={!!ocupado || incluidos === 0}>{ocupado === 'aprovar' || ocupado === 'editar' ? 'Criando…' : 'Aprovar e criar códigos'}</button>
                   </div>

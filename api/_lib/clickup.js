@@ -51,6 +51,14 @@ export const buscarTarefa = (id) => chamar('GET', `/task/${encodeURIComponent(id
 export const listarTarefasDaLista = (listaId, { desdeMs = 0, pagina = 0 } = {}) =>
   chamar('GET', `/list/${listaId}/task?page=${pagina}&order_by=updated&reverse=true&include_markdown_description=true&subtasks=false&include_closed=true${desdeMs ? `&date_updated_gt=${desdeMs}` : ''}`);
 
+// Baixa um anexo (limite de tamanho). O endereço do anexo já vem assinado pelo ClickUp.
+export async function baixarArquivo(url, maxBytes = 8 * 1024 * 1024) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!r.ok) throw new ErroClickUp(`Não consegui baixar o anexo (HTTP ${r.status}).`, r.status);
+  const buffer = Buffer.from(await r.arrayBuffer());
+  if (buffer.length > maxBytes) throw new ErroClickUp('O anexo é grande demais para ler.', 413);
+  return buffer;
+}
 export const listarComentarios = (id) => chamar('GET', `/task/${encodeURIComponent(id)}/comment`);
 export const atualizarStatusTarefa = (id, status) => chamar('PUT', `/task/${encodeURIComponent(id)}`, { status });
 export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURIComponent(id)}/comment`, { comment_text: texto, notify_all: false });

@@ -178,7 +178,7 @@ export async function listarSolicitacoes(sql, { status = '', busca = '', sugesta
 export async function detalharSolicitacao(sql, id) {
   const [s] = await sql`SELECT * FROM solicitacoes WHERE id = ${id}`;
   if (!s) return null;
-  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status, ncm, entra_na_loja, ncm_padrao, ncm_revisado_em FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
+  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status, ncm, entra_na_loja, ncm_padrao, ncm_revisado_em, ncm_sugerido, ncm_fonte FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
   const historico = await sql`SELECT usuario, acao, detalhe, em FROM solicitacoes_log WHERE solicitacao_id = ${id} ORDER BY em DESC LIMIT 50`;
   const cadastros = s.lote_id ? await sql`SELECT id, linha, descricao, codigo, omie_status, omie_erro, nexaas_status, nexaas_erro, atualizado_em FROM cadastros WHERE lote_id = ${s.lote_id} ORDER BY id` : [];
   const padroes = await lerNcmPadrao(sql);

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test src/lib/skus.test.js src/lib/modeloPlanilha.test.js src/lib/regras.test.js src/lib/solicitacoes.test.js api/_lib/clickup.test.js",
+    "test": "node --test src/lib/skus.test.js src/lib/modeloPlanilha.test.js src/lib/regras.test.js src/lib/solicitacoes.test.js src/lib/nota.test.js api/_lib/clickup.test.js",
     "preview": "vite preview",
     "verificar-solicitacoes": "node --env-file=.env.local scripts/verificar-solicitacoes.mjs",
     "verificar-importacao": "node --env-file=.env.local scripts/verificar-importacao.mjs",
@@ -24,6 +24,7 @@
     "exceljs": "^4.4.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "unpdf": "^2.2.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
