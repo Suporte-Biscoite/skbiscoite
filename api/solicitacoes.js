@@ -9,6 +9,7 @@ import { sql } from './_lib/db.js';
 import { exigirUsuario } from './_lib/sessao.js';
 import { garantirEsquema } from './_lib/schema.js';
 import { clickupConfigurado } from './_lib/clickup.js';
+import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { conferirLista, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
     await garantirEsquema();
 
     if (req.method === 'GET') {
+      if (req.query.ncm) return res.status(200).json({ padrao: await lerNcmPadrao(sql), revisar: await listarParaRevisarNcm(sql) });
       if (req.query.config) return res.status(200).json({ ...(await lerConfig(sql)), clickupConfigurado: clickupConfigurado() });
       if (req.query.id) {
         const id = Number(req.query.id);
@@ -34,6 +36,8 @@ export default async function handler(req, res) {
 
     const { acao, id, itens, prefixoCodigo, motivo, ...mudancas } = req.body || {};
     if (acao === 'config') return res.status(200).json(await gravarConfig(sql, usuario, mudancas));
+    if (acao === 'ncm-padrao') return res.status(200).json(await gravarNcmPadrao(sql, usuario, req.body.padrao));
+    if (acao === 'ncm-revisar') return res.status(200).json(await revisarNcm(sql, usuario, Number(req.body.itemId), req.body.ncm));
     if (acao === 'conferir') {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
       return res.status(200).json(await conferirLista(sql));

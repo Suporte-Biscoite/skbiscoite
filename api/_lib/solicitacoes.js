@@ -5,6 +5,7 @@ import { sql as sqlPadrao } from './db.js';
 import { lerEstado, gravarEstado } from './catalogo.js';
 import { CONFIG_PADRAO, analisarSolicitacao, lerTarefaClickUp, prepararCatalogo } from '../../src/lib/solicitacoes.js';
 import { obterFamiliaPorPrefixo } from '../../src/lib/familias.js';
+import { lerNcmPadrao } from './ncm.js';
 import { buscarTarefa, comentarTarefa, listarComentarios, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
 
 // ---------- Configuração (guardada no banco; botão de pausa e modo) ----------
@@ -177,10 +178,11 @@ export async function listarSolicitacoes(sql, { status = '', busca = '', sugesta
 export async function detalharSolicitacao(sql, id) {
   const [s] = await sql`SELECT * FROM solicitacoes WHERE id = ${id}`;
   if (!s) return null;
-  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
+  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status, ncm, entra_na_loja, ncm_padrao, ncm_revisado_em FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
   const historico = await sql`SELECT usuario, acao, detalhe, em FROM solicitacoes_log WHERE solicitacao_id = ${id} ORDER BY em DESC LIMIT 50`;
   const cadastros = s.lote_id ? await sql`SELECT id, linha, descricao, codigo, omie_status, omie_erro, nexaas_status, nexaas_erro, atualizado_em FROM cadastros WHERE lote_id = ${s.lote_id} ORDER BY id` : [];
-  return { ...s, itens, historico, cadastros, etapas: montarEtapas(s, cadastros), statusConcluido: process.env.CLICKUP_STATUS_CONCLUIDO || null };
+  const padroes = await lerNcmPadrao(sql);
+  return { ...s, itens, historico, cadastros, etapas: montarEtapas(s, cadastros), ncmPadraoDaFamilia: padroes[s.prefixo_codigo] ?? padroes[s.familia_prefixo] ?? null, statusConcluido: process.env.CLICKUP_STATUS_CONCLUIDO || null };
 }
 
 const ESTADOS_EDITAVEIS = ['aguardando_analise', 'recebida'];
@@ -294,9 +296,11 @@ export async function comentarCodigos(sql, id, { enviar = comentarResultado, exi
   if (!s) throw new Error('Solicitação não encontrada.');
   const trava = await sql`UPDATE solicitacoes SET comentado_em = now() WHERE id = ${id} AND comentado_em IS NULL RETURNING id`;
   if (!trava.length) return { enviado: true, jaEnviado: true };
-  const itens = await sql`SELECT codigo_gerado, descricao FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido AND codigo_gerado IS NOT NULL ORDER BY ordem`;
+  const itens = await sql`SELECT codigo_gerado, descricao, ncm, ncm_padrao FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido AND codigo_gerado IS NOT NULL ORDER BY ordem`;
   const marca = `(solicitação #${id})`;
-  const texto = `Códigos gerados pelo SKBiscoitê ${marca}:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}`;
+  const aRevisar = itens.filter((i) => i.ncm_padrao);
+  const aviso = aRevisar.length ? `\n\nNCM padrão aplicado (${[...new Set(aRevisar.map((i) => i.ncm))].join(', ')}) em: ${aRevisar.map((i) => i.codigo_gerado).join(', ')}. Será revisado e ajustado no sistema se necessário.` : '';
+  const texto = `Códigos gerados pelo SKBiscoitê ${marca}:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}${aviso}`;
   const registrar = (acao, detalhe) => sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${acao}, ${JSON.stringify(detalhe)}::jsonb)`;
   try {
     if (s.comentario_erro && s.origem !== 'teste') {
