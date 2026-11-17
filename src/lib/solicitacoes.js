@@ -16,6 +16,9 @@ export const CONFIG_PADRAO = Object.freeze({
 export function prefixoDaFamiliaDoCampo(nome) {
   const t = normalizarTexto(nome);
   if (!t) return null;
+  // O formulário traz o código da família entre parênteses: "INTERNO(400)", "ENVASE E MATERIA PRIMA(1010)".
+  const entreParenteses = String(nome).match(/\((\d{3,4})\)/)?.[1];
+  if (entreParenteses && FAMILIAS.some((x) => x.prefixo === entreParenteses)) return entreParenteses;
   const f = FAMILIAS.find((x) => x.grupo === t || normalizarTexto(x.familia) === t);
   return f ? f.prefixo : null;
 }
@@ -104,12 +107,17 @@ export function lerTarefaClickUp(tarefa) {
   const descricao = tarefa.text_content ?? tarefa.description ?? tarefa.markdown_description ?? '';
   const familiaCampo = dropdown('Família de Produto');
   const tipoIdentificacao = dropdown('Tipo de Identificação');
+  const statusNome = typeof tarefa.status === 'string' ? tarefa.status : tarefa.status?.status ?? '';
+  const statusTipo = typeof tarefa.status === 'object' ? tarefa.status?.type ?? '' : '';
+  // "finalizado" (closed) e "cancelado"/"projetos" (done) tiram a tarefa da fila de análise.
+  const encerramento = /cancel/i.test(statusNome) ? 'cancelada' : ['closed', 'done'].includes(statusTipo) || /finaliz|conclu/i.test(statusNome) ? 'finalizada' : null;
   return {
     taskId: String(tarefa.id),
     titulo: String(tarefa.name ?? ''),
     descricao: String(descricao),
     url: tarefa.url || `https://app.clickup.com/t/${tarefa.id}`,
-    statusClickUp: typeof tarefa.status === 'string' ? tarefa.status : tarefa.status?.status ?? '',
+    statusClickUp: statusNome,
+    encerramento,
     familiaCampo,
     tipoIdentificacao,
     solicitante: solicitante?.username ?? tarefa.creator?.username ?? '',

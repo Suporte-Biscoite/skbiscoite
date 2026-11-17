@@ -38,6 +38,25 @@ async function catalogoDoOmie(sql) {
 
 const hashDoConteudo = (t) => crypto.createHash('sha256').update(JSON.stringify([t.titulo, t.descricao, t.familiaCampo, t.tipoIdentificacao])).digest('hex');
 
+// Mudança de status no ClickUp: finalizada/cancelada tira a solicitação da fila; reaberta volta para análise.
+async function sincronizarStatus(sql, existente, t) {
+  const editavel = ['recebida', 'aguardando_analise'].includes(existente.status);
+  if (existente.status_clickup !== t.statusClickUp) await sql`UPDATE solicitacoes SET status_clickup = ${t.statusClickUp}, atualizado_clickup = ${t.atualizadoEm}, atualizado_em = now() WHERE id = ${existente.id}`;
+  if (t.encerramento && editavel) {
+    const novo = t.encerramento === 'cancelada' ? 'cancelada_clickup' : 'finalizada_clickup';
+    await sql`UPDATE solicitacoes SET status = ${novo}, encerrada_em = now(), atualizado_em = now() WHERE id = ${existente.id}`;
+    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${existente.id}, 'sistema', ${novo}, ${JSON.stringify({ statusClickUp: t.statusClickUp })}::jsonb)`;
+    return { resultado: 'encerrada', id: existente.id };
+  }
+  if (!t.encerramento && ['finalizada_clickup', 'cancelada_clickup'].includes(existente.status)) {
+    await sql`UPDATE solicitacoes SET status = 'aguardando_analise', hash_conteudo = NULL, encerrada_em = NULL WHERE id = ${existente.id}`;
+    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${existente.id}, 'sistema', 'reaberta', ${JSON.stringify({ statusClickUp: t.statusClickUp })}::jsonb)`;
+    existente.status = 'aguardando_analise';
+    existente.hash_conteudo = null;
+  }
+  return null;
+}
+
 // ---------- Entrada de uma tarefa (idempotente) ----------
 // Devolve { resultado: 'nova'|'atualizada'|'sem-mudanca'|'ignorada'|'travada', id }.
 export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalogo = null } = {}) {
@@ -45,7 +64,12 @@ export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalo
   if (!t.ehCadastro) return { resultado: 'ignorada', motivo: 'Não é do formulário de cadastro.' };
 
   const hash = hashDoConteudo(t);
-  const [existente] = await sql`SELECT id, status, hash_conteudo, editado FROM solicitacoes WHERE clickup_task_id = ${t.taskId}`;
+  const [existente] = await sql`SELECT id, status, hash_conteudo, editado, status_clickup FROM solicitacoes WHERE clickup_task_id = ${t.taskId}`;
+  if (!existente && t.encerramento) return { resultado: 'ignorada', motivo: 'Tarefa já encerrada no ClickUp.' };
+  if (existente) {
+    const r = await sincronizarStatus(sql, existente, t);
+    if (r) return r;
+  }
   if (existente && existente.hash_conteudo === hash) return { resultado: 'sem-mudanca', id: existente.id };
   // Depois de aprovada/recusada/processada, mudar o texto no ClickUp não mexe mais na solicitação.
   if (existente && !['recebida', 'aguardando_analise'].includes(existente.status)) return { resultado: 'travada', id: existente.id };
@@ -114,7 +138,7 @@ export async function tratarEvento(sql, evento, chave) {
 export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
   const cursor = (await lerEstado(sql, 'clickup_cursor'))?.ate ?? 0;
   const catalogo = await catalogoDoOmie(sql);
-  const resumo = { lidas: 0, novas: 0, atualizadas: 0, ignoradas: 0 };
+  const resumo = { lidas: 0, novas: 0, atualizadas: 0, ignoradas: 0, encerradas: 0 };
   let maiorData = cursor;
   for (let pagina = 0; pagina < maximoPaginas; pagina++) {
     const r = await listarTarefasDaLista(listaMonitorada(), { desdeMs: cursor, pagina });
@@ -125,6 +149,7 @@ export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
       if (x.resultado === 'nova') resumo.novas++;
       else if (x.resultado === 'atualizada') resumo.atualizadas++;
       else if (x.resultado === 'ignorada') resumo.ignoradas++;
+      else if (x.resultado === 'encerrada') resumo.encerradas++;
     }
     if (r.last_page !== false) break;
   }
@@ -136,7 +161,7 @@ export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
 // ---------- Tela: listar, detalhar, editar, aprovar, recusar ----------
 export async function listarSolicitacoes(sql, { status = '', busca = '', sugestao = '' } = {}) {
   const b = `%${busca.trim()}%`;
-  return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.recebido_em, s.decidido_em, s.decidido_por,
+  return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.status_clickup, s.comentado_em, s.recebido_em, s.decidido_em, s.decidido_por,
       (SELECT count(*) FROM solicitacao_itens i WHERE i.solicitacao_id = s.id AND i.incluido) AS itens
     FROM solicitacoes s
     WHERE (${status} = '' OR s.status = ${status}) AND (${sugestao} = '' OR s.sugestao = ${sugestao}) AND (${busca.trim()} = '' OR s.titulo ILIKE ${b} OR s.solicitante ILIKE ${b})
@@ -207,4 +232,32 @@ export async function comentarResultado(sql, id, texto) {
   if (!s || s.origem === 'teste') return { enviado: false, motivo: 'Solicitação de teste.' };
   await comentarTarefa(s.clickup_task_id, texto);
   return { enviado: true };
+}
+
+// Chamado quando um cadastro ganha código. Se o nome bate com um produto de uma solicitação ainda viva, anota o código
+// no item; quando todos os itens da solicitação têm código, marca como concluída e comenta na tarefa do ClickUp.
+export async function registrarCodigoGerado(sql, cadastro) {
+  if (!cadastro?.codigo || !cadastro.descricao) return { vinculado: false };
+  const [item] = await sql`SELECT i.id, i.solicitacao_id FROM solicitacao_itens i JOIN solicitacoes s ON s.id = i.solicitacao_id
+    WHERE upper(trim(i.descricao)) = ${String(cadastro.descricao).trim().toUpperCase()} AND i.incluido AND i.codigo_gerado IS NULL
+      AND s.status IN ('recebida', 'aguardando_analise', 'aprovada', 'processando') ORDER BY s.recebido_em LIMIT 1`;
+  if (!item) return { vinculado: false };
+  await sql`UPDATE solicitacao_itens SET codigo_gerado = ${cadastro.codigo}, cadastro_id = ${cadastro.id}, status = 'codigo_gerado' WHERE id = ${item.id}`;
+  await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', 'codigo-gerado', ${JSON.stringify({ codigo: cadastro.codigo })}::jsonb)`;
+  const [{ faltam }] = await sql`SELECT count(*)::int AS faltam FROM solicitacao_itens WHERE solicitacao_id = ${item.solicitacao_id} AND incluido AND codigo_gerado IS NULL`;
+  if (faltam > 0) return { vinculado: true, completa: false };
+  await sql`UPDATE solicitacoes SET status = 'concluida', atualizado_em = now() WHERE id = ${item.solicitacao_id}`;
+  const pronta = await sql`UPDATE solicitacoes SET comentado_em = now() WHERE id = ${item.solicitacao_id} AND comentado_em IS NULL RETURNING id`;
+  if (!pronta.length) return { vinculado: true, completa: true };
+  const itens = await sql`SELECT codigo_gerado, descricao FROM solicitacao_itens WHERE solicitacao_id = ${item.solicitacao_id} AND incluido ORDER BY ordem`;
+  const texto = `Códigos gerados pelo SKBiscoitê:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}`;
+  try {
+    const r = await comentarResultado(sql, item.solicitacao_id, texto);
+    if (!r.enviado) await sql`UPDATE solicitacoes SET comentado_em = NULL WHERE id = ${item.solicitacao_id}`;
+    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', ${r.enviado ? 'comentou-no-clickup' : 'comentario-nao-enviado'}, ${JSON.stringify({ motivo: r.motivo ?? null })}::jsonb)`;
+  } catch (erro) {
+    await sql`UPDATE solicitacoes SET comentado_em = NULL WHERE id = ${item.solicitacao_id}`;
+    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', 'comentario-falhou', ${JSON.stringify({ erro: String(erro.message).slice(0, 200) })}::jsonb)`;
+  }
+  return { vinculado: true, completa: true };
 }

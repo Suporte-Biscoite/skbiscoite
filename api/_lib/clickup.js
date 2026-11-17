@@ -47,7 +47,7 @@ export const buscarTarefa = (id) => chamar('GET', `/task/${encodeURIComponent(id
 
 // Tarefas da lista alteradas depois de `desdeMs` (mais antigas primeiro), uma página por chamada.
 export const listarTarefasDaLista = (listaId, { desdeMs = 0, pagina = 0 } = {}) =>
-  chamar('GET', `/list/${listaId}/task?page=${pagina}&order_by=updated&reverse=true&include_markdown_description=true&subtasks=false${desdeMs ? `&date_updated_gt=${desdeMs}` : ''}`);
+  chamar('GET', `/list/${listaId}/task?page=${pagina}&order_by=updated&reverse=true&include_markdown_description=true&subtasks=false&include_closed=true${desdeMs ? `&date_updated_gt=${desdeMs}` : ''}`);
 
 export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURIComponent(id)}/comment`, { comment_text: texto, notify_all: false });
 

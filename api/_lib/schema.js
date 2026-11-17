@@ -86,6 +86,8 @@ export function garantirEsquema(sql = sqlPadrao) {
       erro text,
       recebido_em timestamptz NOT NULL DEFAULT now(),
       atualizado_em timestamptz NOT NULL DEFAULT now())`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentado_em timestamptz`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS encerrada_em timestamptz`;
     await sql`CREATE INDEX IF NOT EXISTS solicitacoes_status_idx ON solicitacoes (status, recebido_em DESC)`;
     await sql`CREATE TABLE IF NOT EXISTS solicitacao_itens (
       id bigserial PRIMARY KEY,
@@ -118,14 +120,6 @@ export function garantirEsquema(sql = sqlPadrao) {
       detalhe jsonb NOT NULL DEFAULT '{}'::jsonb,
       em timestamptz NOT NULL DEFAULT now())`;
 
-    // ---- Solicitações vindas do ClickUp (Fase 1: só análise) ----
-    await sql;
-    await sql;
-    await sql;
-    await sql;
-    // Cada evento do webhook entra uma vez só (a chave única é o que impede reprocessar o mesmo evento).
-    await sql;
-    await sql;
   })().catch((erro) => {
     pronto = null; // tenta de novo na próxima chamada
     throw erro;

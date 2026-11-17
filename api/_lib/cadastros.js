@@ -8,6 +8,7 @@ import { encontrarProximaVaga, ehErroDeCodigoDuplicado } from '../../src/lib/sku
 import { CANAL_NEXAAS_ESTOQUE, validarItem, montarProdutoOmie, montarProdutoNexaas, nomeFamiliaOmie, nomeCategoriaNexaas } from '../../src/lib/regras.js';
 import { descricaoJaExiste, familiasOmie, gravarEstado, lerEstado, resolverFamiliaOmie, salvarProdutos } from './catalogo.js';
 import { alterarProdutoOmie, consultarProdutoOmie, ErroOmie, incluirProdutoOmie } from './omie.js';
+import { registrarCodigoGerado } from './solicitacoes.js';
 import { buscarSkuNexaas, criarProdutoNexaas, listarCanaisNexaas, listarCategoriasNexaas } from './nexaas.js';
 
 const NEXAAS_CONFIG_VALIDA_POR_MS = 30 * 60 * 1000;
@@ -183,6 +184,8 @@ async function sucessoOmie(sql, cadastro, omieId) {
     WHERE id = ${cadastro.id} RETURNING *`;
   await salvarProdutos(sql, [{ codigo: cadastro.codigo, descricao: cadastro.descricao, codigo_produto: omieId }]);
   await sql`INSERT INTO historico_skus (email_usuario, sku, descricao) VALUES (${cadastro.usuario_email}, ${cadastro.codigo}, ${cadastro.descricao})`.catch(() => {});
+  // Se o produto veio de uma solicitação do ClickUp, anota o código e (ao completar) comenta na tarefa. Nunca atrapalha o cadastro.
+  await registrarCodigoGerado(sql, atualizado ?? cadastro).catch((erro) => console.error('Solicitação do ClickUp:', erro.message));
   return atualizado;
 }
 
