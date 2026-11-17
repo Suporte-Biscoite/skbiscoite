@@ -113,6 +113,9 @@ export function garantirEsquema(sql = sqlPadrao) {
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm text`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS entra_na_loja boolean`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_padrao boolean NOT NULL DEFAULT false`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_sugerido text`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_fonte text`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS nota_info jsonb`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_revisado_em timestamptz`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_revisado_por text`
     await sql`CREATE INDEX IF NOT EXISTS solicitacao_itens_sol_idx ON solicitacao_itens (solicitacao_id, ordem)`;

@@ -9,6 +9,7 @@ import { sql } from './_lib/db.js';
 import { exigirUsuario } from './_lib/sessao.js';
 import { garantirEsquema } from './_lib/schema.js';
 import { clickupConfigurado } from './_lib/clickup.js';
+import { lerNotaDaSolicitacao } from './_lib/nota.js';
 import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { conferirLista, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
@@ -44,6 +45,11 @@ export default async function handler(req, res) {
     }
     const n = Number(id);
     if (!Number.isInteger(n)) return res.status(400).json({ error: 'Solicitação inválida.' });
+    if (acao === 'ler-nota') {
+      if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
+      const leitura = await lerNotaDaSolicitacao(sql, usuario, n);
+      return res.status(200).json({ ...(await detalharSolicitacao(sql, n)), leitura });
+    }
     if (acao === 'editar') { await editarItens(sql, usuario, n, { itens, prefixoCodigo }); return res.status(200).json(await detalharSolicitacao(sql, n)); }
     // Aprovar = autorizar a criação desta solicitação (vale mesmo no modo 'Só analisar'); cria na mesma fila do gerador individual.
     if (acao === 'aprovar') return res.status(200).json(await aprovarECriar(sql, usuario, n));
