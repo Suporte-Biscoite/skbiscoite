@@ -31,7 +31,7 @@ export async function perguntarFamiliaIA(titulo, familiaEscolhida, descricoes, {
       temperature: 0,
       messages: [
         { role: 'system', content: REGRAS },
-        { role: 'user', content: JSON.stringify({ titulo_do_pedido: titulo, familia_escolhida_no_formulario: familiaEscolhida, produtos: descricoes }) },
+        { role: 'user', content: JSON.stringify({ titulo_do_pedido: titulo, familia_escolhida_no_formulario: familiaEscolhida, produtos: descricoes.map((nome, indice) => ({ indice, nome })) }) },
       ],
       response_format: {
         type: 'json_schema',
@@ -39,7 +39,7 @@ export async function perguntarFamiliaIA(titulo, familiaEscolhida, descricoes, {
           name: 'familias', strict: true,
           schema: {
             type: 'object', additionalProperties: false, required: ['itens'],
-            properties: { itens: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['indice', 'prefixo', 'confianca', 'motivo'], properties: { indice: { type: 'integer' }, prefixo: { type: 'string', enum: PREFIXOS }, confianca: { type: 'string', enum: ['alta', 'media', 'baixa'] }, motivo: { type: 'string' } } } } },
+            properties: { itens: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['indice', 'nome', 'prefixo', 'confianca', 'motivo'], properties: { indice: { type: 'integer' }, nome: { type: 'string' }, prefixo: { type: 'string', enum: PREFIXOS }, confianca: { type: 'string', enum: ['alta', 'media', 'baixa'] }, motivo: { type: 'string' } } } } },
           },
         },
       },
@@ -49,7 +49,9 @@ export async function perguntarFamiliaIA(titulo, familiaEscolhida, descricoes, {
   if (!resposta.ok) throw new Error(`OpenAI respondeu ${resposta.status}: ${dados.error?.message ?? 'erro'}`.slice(0, 200));
   const lista = JSON.parse(dados.choices?.[0]?.message?.content ?? '{}').itens ?? [];
   return descricoes.map((descricao, k) => {
-    const r = lista.find((x) => x.indice === k);
+    // Liga pelo NOME devolvido (a IA às vezes conta a partir de 1); só se o nome não vier usa a posição.
+    const chaveNome = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const r = lista.find((x) => chaveNome(x.nome) === chaveNome(descricao)) ?? (lista.every((x) => !x.nome) ? lista.find((x) => x.indice === k) : null);
     return r ? { descricao, prefixo: r.prefixo, confianca: r.confianca, motivo: String(r.motivo ?? '').slice(0, 200) } : null;
   });
 }

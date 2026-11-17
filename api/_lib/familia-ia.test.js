@@ -7,7 +7,7 @@ const resposta = (itens) => async () => ({ ok: true, json: async () => ({ choice
 test('a IA devolve uma família por produto, na ordem pedida', async () => {
   const r = await perguntarFamiliaIA('Pedido', 'SUPRIMENTOS(700)', ['GAVETEIRO ORGANIZADOR', 'PAPEL HIGIENICO'], {
     chave: 'x',
-    buscar: resposta([{ indice: 1, prefixo: '700', confianca: 'alta', motivo: 'consumo' }, { indice: 0, prefixo: '800', confianca: 'alta', motivo: 'móvel' }]),
+    buscar: resposta([{ indice: 1, nome: 'papel higiênico', prefixo: '700', confianca: 'alta', motivo: 'consumo' }, { indice: 2, nome: 'GAVETEIRO ORGANIZADOR', prefixo: '800', confianca: 'alta', motivo: 'móvel' }]),
   });
   assert.deepEqual(r.map((x) => [x.descricao, x.prefixo]), [['GAVETEIRO ORGANIZADOR', '800'], ['PAPEL HIGIENICO', '700']]);
 });
