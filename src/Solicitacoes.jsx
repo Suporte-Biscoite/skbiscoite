@@ -273,6 +273,23 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                       <input className="b-input" value={i.descricao} maxLength={140} aria-label={`Nome do produto ${k + 1}`} onChange={(e) => mudarItem(k, { descricao: e.target.value.toUpperCase() })} />
                     ) : <strong>{i.descricao}</strong>}
                     {(i.avisos || []).map((a) => <em key={a} className="cad-linha__problema">{a}</em>)}
+                    {podeCriar && (() => {
+                      const p = (i.parecidos || []).find((x) => x.situacao !== 'fora_da_faixa');
+                      if (!p || (p.igual && p.situacao === 'correto')) return null;
+                      return (
+                        <label className="sol-incluir sol-existente">
+                          <input type="checkbox" checked={String(i.usar_codigo || '') === String(p.codigo)} onChange={(e) => mudarItem(k, { usar_codigo: e.target.checked ? String(p.codigo) : null })} />
+                          Usar o código existente {p.codigo} ({p.descricao}) em vez de criar um novo
+                        </label>
+                      );
+                    })()}
+                    {(() => {
+                      const c = (aberta.cadastros || []).find((x) => x.id === i.cadastro_id);
+                      if (!c) return null;
+                      const ja = c.acao === 'JaCadastrado';
+                      const nexaas = c.nexaas_status === 'ok' ? (c.nexaas_origem === 'ja_existia' ? 'Nexaas: já estava cadastrado' : 'Nexaas: cadastrado agora') : c.nexaas_status === 'erro' ? 'Nexaas: falhou' : 'Nexaas: pendente';
+                      return <span className="sol-meta"><strong>{ja ? 'Já cadastrado no Omie (não recadastrado)' : c.omie_status === 'ok' ? 'Criado agora no Omie' : 'Omie: ' + c.omie_status}</strong> · {nexaas}</span>;
+                    })()}
                     {i.codigo_gerado && <span>Código: <strong>{i.codigo_gerado}</strong></span>}
                     {podeCriar && (
                       <div className="sol-criacao">
@@ -403,6 +420,11 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                 <input type="checkbox" role="switch" checked={!!config.pausado} onChange={(e) => mudarConfig({ pausado: e.target.checked })} />
                 <span className="cad-switch__trilho" aria-hidden="true" />
                 Pausar a criação automática
+              </label>
+              <label className="cad-switch" title="Quando a IA estranha a família pedida, deixa uma pergunta na tarefa do ClickUp (uma vez por dúvida). Só funciona com os comentários do sistema ligados.">
+                <input type="checkbox" role="switch" checked={!!config.comentarDuvidasIA} onChange={(e) => mudarConfig({ comentarDuvidasIA: e.target.checked })} />
+                <span className="cad-switch__trilho" aria-hidden="true" />
+                A IA comenta dúvidas na tarefa
               </label>
             </div>
             <p className="sol-meta sol-meta--sem-margem">Aprovar manualmente sempre funciona, em qualquer modo. Este controle só vale para a criação feita sozinha pelo sistema.</p>

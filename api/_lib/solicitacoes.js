@@ -26,6 +26,7 @@ export async function gravarConfig(sql, usuario, mudancas) {
     novo.modo = mudancas.modo;
   }
   const inteiro = (v, min, max, nome) => { const n = Number(v); if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${nome} deve ser um número inteiro entre ${min} e ${max}.`); return n; };
+  if ('comentarDuvidasIA' in mudancas) novo.comentarDuvidasIA = !!mudancas.comentarDuvidasIA;
   if ('limiteItensAuto' in mudancas) novo.limiteItensAuto = inteiro(mudancas.limiteItensAuto, 1, 100, 'Limite de itens');
   if ('limiteAutoPorDia' in mudancas) novo.limiteAutoPorDia = inteiro(mudancas.limiteAutoPorDia, 1, 500, 'Limite por dia');
   if ('intervaloMinutos' in mudancas) novo.intervaloMinutos = inteiro(mudancas.intervaloMinutos, 1, 240, 'Intervalo');
@@ -34,6 +35,18 @@ export async function gravarConfig(sql, usuario, mudancas) {
   await sql`INSERT INTO solicitacoes_log (usuario, acao, detalhe) VALUES (${usuario.email}, 'config', ${JSON.stringify(mudancas)}::jsonb)`;
   return novo;
 }
+
+// A dúvida da IA só vai para o ClickUp se o comentário estiver ligado (CLICKUP_COMENTAR=1) E o interruptor da tela também.
+async function comentarDuvidaNaTarefa(sql, id, texto) {
+  const config = await lerConfig(sql);
+  if (!config.comentarNoClickUp) return { enviado: false, motivo: 'Comentários no ClickUp desligados (CLICKUP_COMENTAR).' };
+  if (!config.comentarDuvidasIA) return { enviado: false, motivo: 'Comentar dúvidas da IA está desligado.' };
+  const [s] = await sql`SELECT clickup_task_id, origem FROM solicitacoes WHERE id = ${id}`;
+  if (!s || s.origem === 'teste') return { enviado: false, motivo: 'Solicitação de teste.' };
+  await comentarTarefa(s.clickup_task_id, texto);
+  return { enviado: true };
+}
+export const conferirFamiliaDaSolicitacao = (sql, id, { ia, comentar = comentarDuvidaNaTarefa } = {}) => conferirFamilia(sql, id, { ia, comentar });
 
 async function catalogoDoOmie(sql) {
   const linhas = await sql`SELECT codigo, descricao FROM omie_produtos WHERE inativo = false AND length(descricao) > 0`;
@@ -120,7 +133,7 @@ export async function receberTarefa(sql, tarefaApi, { origem = 'clickup', catalo
   }
   await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${existente ? 'reanalisada' : 'recebida'}, ${JSON.stringify({ itens: analise.itens.length, sugestao: analise.sugestao })}::jsonb)`;
   const ia = familiaIA ?? (origem !== 'teste' && process.env.OPENAI_API_KEY ? (titulo, familia, nomes) => perguntarFamiliaIA(titulo, familia, nomes, { timeoutMs: 12000 }) : null);
-  if (ia && analise.rota === 'criar' && analise.itens.length) await conferirFamilia(sql, id, { ia }).catch(() => {});
+  if (ia && analise.rota === 'criar' && analise.itens.length) await conferirFamiliaDaSolicitacao(sql, id, { ia }).catch(() => {});
   return { resultado: existente ? 'atualizada' : 'nova', id };
 }
 
@@ -193,9 +206,9 @@ export async function contarEmAberto(sql) {
 export async function detalharSolicitacao(sql, id) {
   const [s] = await sql`SELECT * FROM solicitacoes WHERE id = ${id}`;
   if (!s) return null;
-  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status, ncm, entra_na_loja, ncm_padrao, ncm_revisado_em, ncm_sugerido, ncm_fonte FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
+  const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status, ncm, entra_na_loja, ncm_padrao, ncm_revisado_em, ncm_sugerido, ncm_fonte, usar_codigo, cadastro_id FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
   const historico = await sql`SELECT usuario, acao, detalhe, em FROM solicitacoes_log WHERE solicitacao_id = ${id} ORDER BY em DESC LIMIT 50`;
-  const cadastros = s.lote_id ? await sql`SELECT id, linha, descricao, codigo, omie_status, omie_erro, nexaas_status, nexaas_erro, atualizado_em FROM cadastros WHERE lote_id = ${s.lote_id} ORDER BY id` : [];
+  const cadastros = s.lote_id ? await sql`SELECT id, linha, descricao, codigo, acao, nexaas_origem, omie_status, omie_erro, nexaas_status, nexaas_erro, atualizado_em FROM cadastros WHERE lote_id = ${s.lote_id} ORDER BY id` : [];
   const padroes = await lerNcmPadrao(sql);
   return { ...s, itens, historico, cadastros, etapas: montarEtapas(s, cadastros), ncmPadraoDaFamilia: padroes[s.prefixo_codigo] ?? padroes[s.familia_prefixo] ?? null, statusConcluido: process.env.CLICKUP_STATUS_CONCLUIDO || null };
 }
@@ -218,8 +231,8 @@ export async function editarItens(sql, usuario, id, { itens, prefixoCodigo }) {
     ordem += 1;
     const ncm = String(item.ncm ?? '').replace(/\D/g, '') || null;
     const entra = typeof item.entra_na_loja === 'boolean' ? item.entra_na_loja : null;
-    await sql`INSERT INTO solicitacao_itens (solicitacao_id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, ncm, entra_na_loja, codigo_gerado, cadastro_id)
-      VALUES (${id}, ${ordem}, ${item.linha ?? null}, ${item.original ?? null}, ${descricao}, ${JSON.stringify(item.avisos || [])}::jsonb, ${JSON.stringify(item.parecidos || [])}::jsonb, ${item.codigo_existente ?? null}, ${item.incluido !== false}, ${ncm}, ${entra}, NULL, NULL)`;
+    await sql`INSERT INTO solicitacao_itens (solicitacao_id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, ncm, entra_na_loja, codigo_gerado, cadastro_id, ncm_sugerido, ncm_fonte, usar_codigo)
+      VALUES (${id}, ${ordem}, ${item.linha ?? null}, ${item.original ?? null}, ${descricao}, ${JSON.stringify(item.avisos || [])}::jsonb, ${JSON.stringify(item.parecidos || [])}::jsonb, ${item.codigo_existente ?? null}, ${item.incluido !== false}, ${ncm}, ${entra}, NULL, NULL, ${item.ncm_sugerido ?? null}, ${item.ncm_fonte ?? null}, ${/^\d{4,10}$/.test(String(item.usar_codigo ?? '')) ? String(item.usar_codigo) : null})`;
   }
   if (prefixoCodigo !== undefined && !/^\d{3,4}$/.test(String(prefixoCodigo))) throw new Error('Faixa de código inválida (use 3 ou 4 números, ex.: 7000).');
   await sql`UPDATE solicitacoes SET editado = true, prefixo_codigo = COALESCE(${prefixoCodigo ?? null}, prefixo_codigo), atualizado_em = now() WHERE id = ${id}`;
@@ -304,6 +317,13 @@ export async function registrarCodigoGerado(sql, cadastro) {
   return { vinculado: true, completa: true };
 }
 
+// Uma linha por produto, com a situação: criado agora ou já cadastrado (e como ficou o Nexaas).
+export function linhaDoComentario(i) {
+  if (i.acao !== 'JaCadastrado') return `${i.codigo_gerado} - ${i.descricao} (criado agora)`;
+  const nexaas = i.nexaas_origem === 'criado' ? 'cadastrado agora no Nexaas' : i.nexaas_origem === 'ja_existia' ? 'já estava no Nexaas' : 'Nexaas conferido';
+  return `${i.codigo_gerado} - ${i.descricao_omie || i.descricao} (já estava cadastrado no Omie; ${nexaas})`;
+}
+
 // Comenta na tarefa a lista "código - produto". Idempotente: só um comentário por solicitação (comentado_em é a trava).
 // Se uma tentativa anterior falhou, confere os comentários da tarefa antes de reenviar (evita duplicar se a resposta se perdeu).
 export async function comentarCodigos(sql, id, { enviar = comentarResultado, existentes = listarComentarios } = {}) {
@@ -311,11 +331,12 @@ export async function comentarCodigos(sql, id, { enviar = comentarResultado, exi
   if (!s) throw new Error('Solicitação não encontrada.');
   const trava = await sql`UPDATE solicitacoes SET comentado_em = now() WHERE id = ${id} AND comentado_em IS NULL RETURNING id`;
   if (!trava.length) return { enviado: true, jaEnviado: true };
-  const itens = await sql`SELECT codigo_gerado, descricao, ncm, ncm_padrao FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido AND codigo_gerado IS NOT NULL ORDER BY ordem`;
+  const itens = await sql`SELECT i.codigo_gerado, i.descricao, i.ncm, i.ncm_padrao, c.acao, c.nexaas_origem, c.descricao AS descricao_omie
+    FROM solicitacao_itens i LEFT JOIN cadastros c ON c.id = i.cadastro_id WHERE i.solicitacao_id = ${id} AND i.incluido AND i.codigo_gerado IS NOT NULL ORDER BY i.ordem`;
   const marca = `(solicitação #${id})`;
   const aRevisar = itens.filter((i) => i.ncm_padrao);
   const aviso = aRevisar.length ? `\n\nNCM padrão aplicado (${[...new Set(aRevisar.map((i) => i.ncm))].join(', ')}) em: ${aRevisar.map((i) => i.codigo_gerado).join(', ')}. Será revisado e ajustado no sistema se necessário.` : '';
-  const texto = `Códigos gerados pelo SKBiscoitê ${marca}:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}${aviso}`;
+  const texto = `Códigos gerados pelo SKBiscoitê ${marca}:\n\n${itens.map(linhaDoComentario).join('\n')}${aviso}`;
   const registrar = (acao, detalhe) => sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${acao}, ${JSON.stringify(detalhe)}::jsonb)`;
   try {
     if (s.comentario_erro && s.origem !== 'teste') {

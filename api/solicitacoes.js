@@ -12,9 +12,9 @@ import { clickupConfigurado } from './_lib/clickup.js';
 import { lerNotaDaSolicitacao } from './_lib/nota.js';
 import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
 import { processarFilaAutomatica } from './_lib/automatico.js';
-import { conferirFamilia } from './_lib/familia-ia.js';
+
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
-import { conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
+import { conferirFamiliaDaSolicitacao, conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
 const SETORES = (process.env.SOLICITACOES_SETORES || 'TI').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
     }
     if (acao === 'conferir-familia') {
       if (!process.env.OPENAI_API_KEY) return res.status(409).json({ error: 'A chave da IA (OPENAI_API_KEY) não está configurada.' });
-      await conferirFamilia(sql, n);
+      await conferirFamiliaDaSolicitacao(sql, n);
       return res.status(200).json(await detalharSolicitacao(sql, n));
     }
     if (acao === 'editar') { await editarItens(sql, usuario, n, { itens, prefixoCodigo }); return res.status(200).json(await detalharSolicitacao(sql, n)); }

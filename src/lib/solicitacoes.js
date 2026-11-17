@@ -11,6 +11,7 @@ export const CONFIG_PADRAO = Object.freeze({
   intervaloMinutos: 10,
   espacoEntreItensSeg: 2,
   similaridadeMinima: 0.8,
+  comentarDuvidasIA: false, // a IA comenta na tarefa quando estranha a família pedida (só vale com CLICKUP_COMENTAR=1)
 });
 
 // "Família de Produto" do formulário -> prefixo do código (o formulário não tem KITS/500).
@@ -63,27 +64,42 @@ export function lerLinhasDaDescricao(texto) {
   return { itens, ignoradas };
 }
 
+// Chave para comparar nomes ignorando acento, caixa, ordem das palavras, ligações (DE, COM, PARA...) e abreviações comuns (CX = CAIXA).
+const LIGACOES = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'COM', 'E', 'PARA', 'C']);
+const ABREVIACOES = { CX: 'CAIXA', PCT: 'PACOTE', UND: 'UNIDADE', UN: 'UNIDADE', GL: 'GALAO', LTS: 'LITRO', LT: 'LITRO', BD: 'BALDE', RF: 'REFIL', MAQ: 'MAQUINA' };
+export const chaveCanonica = (s) => [...new Set(normalizarTexto(s).split(/[^A-Z0-9]+/).filter(Boolean).map((t) => ABREVIACOES[t] ?? t).filter((t) => !LIGACOES.has(t)))].sort().join(' ');
+
+// O código existente está certo para o pedido? correto = 7 dígitos na família pedida; outra_familia = 7 dígitos de outra família;
+// fora_da_faixa = não segue o padrão (ex.: 10360), é suspeito e precisa de correção.
+export function situacaoDoCodigo(codigo, prefixoPedido) {
+  const c = String(codigo ?? '').trim();
+  const prefixo = FAMILIAS.map((f) => f.prefixo).sort((a, b) => b.length - a.length).find((p) => c.startsWith(p));
+  if (!/^\d{7}$/.test(c) || !prefixo) return 'fora_da_faixa';
+  return prefixo === String(prefixoPedido) ? 'correto' : 'outra_familia';
+}
+
 const tokens = (s) => new Set(normalizarTexto(s).split(/[^A-Z0-9]+/).filter((p) => p.length > 1));
 
 // Prepara o catálogo (lista { codigo, descricao }) para comparar nomes rapidamente.
-export const prepararCatalogo = (produtos) => produtos.map((p) => ({ codigo: p.codigo, descricao: p.descricao, norm: normalizarTexto(p.descricao), t: tokens(p.descricao) }));
+export const prepararCatalogo = (produtos) => produtos.map((p) => ({ codigo: p.codigo, descricao: p.descricao, norm: normalizarTexto(p.descricao), canon: chaveCanonica(p.descricao), t: tokens(p.descricao) }));
 
 // Produtos do Omie com nome igual ou muito parecido (Jaccard de palavras). Igual = exato = 1.
-export function acharParecidos(descricao, catalogoPreparado, minimo = CONFIG_PADRAO.similaridadeMinima, max = 3) {
+export function acharParecidos(descricao, catalogoPreparado, minimo = CONFIG_PADRAO.similaridadeMinima, max = 3, prefixoPedido = null) {
   const norm = normalizarTexto(descricao);
+  const canon = chaveCanonica(descricao);
   const t = tokens(descricao);
   if (t.size === 0) return [];
   const saida = [];
   for (const p of catalogoPreparado) {
     let sim;
-    if (p.norm === norm) sim = 1;
+    if (p.norm === norm || (canon && p.canon === canon)) sim = 1;
     else {
       if (p.t.size === 0) continue;
       let inter = 0;
       for (const x of t) if (p.t.has(x)) inter++;
       sim = inter / (t.size + p.t.size - inter);
     }
-    if (sim >= minimo) saida.push({ codigo: p.codigo, descricao: p.descricao, similaridade: Math.round(sim * 100) / 100 });
+    if (sim >= minimo) saida.push({ codigo: p.codigo, descricao: p.descricao, similaridade: Math.round(sim * 100) / 100, igual: sim === 1, situacao: situacaoDoCodigo(p.codigo, prefixoPedido) });
   }
   return saida.sort((a, b) => b.similaridade - a.similaridade).slice(0, max);
 }
@@ -160,10 +176,14 @@ export function analisarSolicitacao(tarefa, catalogo = [], config = CONFIG_PADRA
 
   const todosAvisos = itens.flatMap((i) => i.avisos);
   for (const item of itens) {
-    item.parecidos = acharParecidos(item.descricao, catalogo, config.similaridadeMinima);
-    if (item.parecidos.length) item.avisos.push(item.parecidos[0].similaridade === 1
-      ? `Já existe no Omie com este nome (${item.parecidos[0].codigo}).`
-      : `Parecido com ${item.parecidos[0].codigo} - ${item.parecidos[0].descricao}.`);
+    item.parecidos = acharParecidos(item.descricao, catalogo, config.similaridadeMinima, 3, familiaPrefixo);
+    const p = item.parecidos[0];
+    if (p) {
+      if (!p.igual) item.avisos.push(`Parecido com ${p.codigo} - ${p.descricao}. Se for o mesmo produto, escolha "Usar o código existente".`);
+      else if (p.situacao === 'correto') item.avisos.push(`Já existe no Omie com este nome (${p.codigo}). Ao aprovar, o código é reaproveitado e o sistema só confere o Nexaas.`);
+      else if (p.situacao === 'fora_da_faixa') item.avisos.push(`Já existe no Omie com este nome, mas o código ${p.codigo} está fora do padrão da família: precisa corrigir o cadastro antigo.`);
+      else item.avisos.push(`Já existe no Omie com este nome, mas em outra família (código ${p.codigo}). Confira se é o mesmo produto.`);
+    }
   }
 
   let rota = 'criar';
