@@ -14,6 +14,8 @@ import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from 
 import { processarFilaAutomatica } from './_lib/automatico.js';
 
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
+import { aplicarCorrecao, correcaoAtiva, desfazerCorrecao, listarCorrecoes, listarSuspeitos, proporCorrecao } from './_lib/correcao.js';
+import { sugerirNomesDaSolicitacao } from './_lib/nome-ia.js';
 import { conferirFamiliaDaSolicitacao, conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
 const SETORES = (process.env.SOLICITACOES_SETORES || 'TI').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -27,6 +29,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       if (req.query.ncm) return res.status(200).json({ padrao: await lerNcmPadrao(sql), revisar: await listarParaRevisarNcm(sql) });
+      if (req.query.correcoes) return res.status(200).json({ ativa: correcaoAtiva(), lista: await listarCorrecoes(sql), suspeitos: await listarSuspeitos(sql, { busca: String(req.query.busca || '').trim() }) });
       if (req.query.contagem) return res.status(200).json(await contarEmAberto(sql));
       if (req.query.config) return res.status(200).json({ ...(await lerConfig(sql)), clickupConfigurado: clickupConfigurado() });
       if (req.query.id) {
@@ -42,6 +45,10 @@ export default async function handler(req, res) {
     if (acao === 'config') return res.status(200).json(await gravarConfig(sql, usuario, mudancas));
     if (acao === 'ncm-padrao') return res.status(200).json(await gravarNcmPadrao(sql, usuario, req.body.padrao));
     if (acao === 'ncm-revisar') return res.status(200).json(await revisarNcm(sql, usuario, Number(req.body.itemId), req.body.ncm));
+    // Correção de cadastro antigo: NUNCA automática. Propor só lê; aplicar e desfazer exigem uma pessoa e OMIE_CORRECAO_ATIVA=1.
+    if (acao === 'correcao-propor') return res.status(200).json(await proporCorrecao(sql, usuario, req.body.codigo, { solicitacaoId: Number(req.body.solicitacaoId) || null }));
+    if (acao === 'correcao-aplicar') return res.status(200).json(await aplicarCorrecao(sql, usuario, Number(req.body.correcaoId), { confirmouConferencia: req.body.confirmouConferencia === true }));
+    if (acao === 'correcao-desfazer') return res.status(200).json(await desfazerCorrecao(sql, usuario, Number(req.body.correcaoId)));
     if (acao === 'conferir') {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
       const lista = await conferirLista(sql);
@@ -54,6 +61,11 @@ export default async function handler(req, res) {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
       const leitura = await lerNotaDaSolicitacao(sql, usuario, n);
       return res.status(200).json({ ...(await detalharSolicitacao(sql, n)), leitura });
+    }
+    if (acao === 'sugerir-nomes') {
+      if (!process.env.OPENAI_API_KEY) return res.status(409).json({ error: 'A chave da IA (OPENAI_API_KEY) não está configurada.' });
+      const leitura = await sugerirNomesDaSolicitacao(sql, usuario, n);
+      return res.status(200).json({ ...(await detalharSolicitacao(sql, n)), leituraNomes: leitura });
     }
     if (acao === 'conferir-familia') {
       if (!process.env.OPENAI_API_KEY) return res.status(409).json({ error: 'A chave da IA (OPENAI_API_KEY) não está configurada.' });

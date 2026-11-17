@@ -82,6 +82,20 @@ export default function Ajuda({ ehTI }) {
           </section>
 
           <section className="b-card cad-secao fade-in">
+            <h3 className="brand-font">Produto que já existe no Omie</h3>
+            <p>Antes de criar, o sistema procura o nome no Omie (sem diferenciar acento, caixa, abreviações como CX/CAIXA e ordem das palavras).</p>
+            <ul>
+              <li><strong>Existe com o código certo:</strong> o código é reaproveitado. O Omie não é recadastrado; o sistema só confere o Nexaas e cadastra lá se faltar. No comentário da tarefa aparece "já estava cadastrado no Omie".</li>
+              <li><strong>Parecido, mas não igual:</strong> aparece a opção "Usar o código existente"; você decide.</li>
+              <li><strong>Existe com código fora do padrão (ex.: 10360):</strong> o pedido fica bloqueado até corrigir o cadastro antigo.</li>
+            </ul>
+            <h4>Corrigir cadastro antigo</h4>
+            <p>No produto bloqueado, clique em "Corrigir cadastro antigo". O sistema só lê o Omie e mostra o antes e o depois (renomear para "CADASTRO ERRADO - nome (INATIVO)" e inativar), o estoque e se existe no Nexaas. Se houver saldo, reserva ou pendência, bloqueia. Pedidos, notas e movimentações o Omie não deixa consultar por produto: você confere lá e confirma. Nada é automático: só roda depois da sua aprovação, fica registrado quem aprovou e dá para desfazer. Esta função fica desligada no servidor até um teste com produto de teste.</p>
+            <h4>Sugerir nomes com IA</h4>
+            <p>Quando o nome veio sujo da nota (ex.: "S40 SUPREMA 3GR BIANCA"), o botão "Sugerir nomes com IA" pesquisa na web só o nome do produto e propõe um nome limpo no padrão do catálogo, com marca, modelo, fontes e confiança. Você aceita, edita ou recusa. A IA nunca cadastra sozinha, nunca inventa dados (sem confiança, o item fica "não identificado") e o nome original da nota fica guardado no cadastro.</p>
+          </section>
+
+          <section className="b-card cad-secao fade-in">
             <h3 className="brand-font">Revisão de NCM</h3>
             <p>Produtos criados com o NCM padrão da família aparecem em "NCM para revisar", no fim da lista de Produtos novos. Informe o NCM correto e o sistema corrige no Omie. No Nexaas o ajuste ainda é manual.</p>
           </section>

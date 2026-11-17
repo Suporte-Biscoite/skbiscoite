@@ -73,3 +73,8 @@
 .ajuda-glossario dd { margin: 0; }
 .ajuda details { border: 1px solid var(--border-cream, #e6dfd2); border-radius: var(--radius-sm); padding: 0.6rem 0.9rem; margin: 0.5rem 0; }
 .ajuda summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+
+.sol-existente { align-items: flex-start; }
+.sol-ia-nome { border-left: 3px solid var(--brand-gold); padding: 0.5rem 0.75rem; margin-top: 0.4rem; background: #FBF6E8; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; display: grid; gap: 0.3rem; }
+.sol-ia-nome a { color: var(--brand-gold); font-weight: 600; }
+.sol-correcao { display: grid; gap: 0.6rem; margin: 0.5rem 0; }

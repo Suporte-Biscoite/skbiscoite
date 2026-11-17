@@ -96,7 +96,29 @@ export function garantirEsquema(sql = sqlPadrao) {
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS ia_familia jsonb`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS ia_comentado_hash text`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS usar_codigo text`;
-    await sql`ALTER TABLE cadastros ADD COLUMN IF NOT EXISTS nexaas_origem text`
+    await sql`ALTER TABLE cadastros ADD COLUMN IF NOT EXISTS nexaas_origem text`;
+    // Correção de cadastro antigo (código fora da faixa): guarda o estado completo de antes para desfazer, e quem aprovou.
+    await sql`CREATE TABLE IF NOT EXISTS correcoes_cadastro (
+      id bigserial PRIMARY KEY,
+      codigo text NOT NULL,
+      codigo_produto bigint,
+      solicitacao_id bigint,
+      estado text NOT NULL DEFAULT 'proposta',
+      antes jsonb NOT NULL DEFAULT '{}'::jsonb,
+      depois jsonb NOT NULL DEFAULT '{}'::jsonb,
+      verificacoes jsonb NOT NULL DEFAULT '{}'::jsonb,
+      bloqueios jsonb NOT NULL DEFAULT '[]'::jsonb,
+      nao_verificado jsonb NOT NULL DEFAULT '[]'::jsonb,
+      nexaas jsonb NOT NULL DEFAULT '{}'::jsonb,
+      passos jsonb NOT NULL DEFAULT '{}'::jsonb,
+      criado_por text, criado_em timestamptz NOT NULL DEFAULT now(),
+      aprovado_por text, aprovado_em timestamptz, aplicado_em timestamptz,
+      desfeito_por text, desfeito_em timestamptz, erro text)`;
+    // Nome sujo: sugestão da IA por item e cache das pesquisas.
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS nome_ia jsonb`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS nome_original text`;
+    await sql`ALTER TABLE cadastros ADD COLUMN IF NOT EXISTS nome_original text`;
+    await sql`CREATE TABLE IF NOT EXISTS nomes_ia_cache (chave text PRIMARY KEY, resultado jsonb NOT NULL, criado_em timestamptz NOT NULL DEFAULT now())`
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS na_fila_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS codigos_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentario_erro text`;

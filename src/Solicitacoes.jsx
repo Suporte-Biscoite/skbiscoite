@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './Cadastro.css';
 import './Solicitacoes.css';
 import NcmPainel from './NcmPainel.jsx';
+import CorrecoesPainel, { CorrigirCadastroAntigo } from './CorrecaoCadastro.jsx';
 
 const STATUS = {
   recebida: ['Recebida', 'espera'],
@@ -169,6 +170,15 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
     const d = await acao('conferir-familia', {}, 'A IA conferiu a família dos produtos.');
     if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
   };
+  const sugerirNomes = async () => {
+    const salvo = await acao('editar', { itens, prefixoCodigo: faixa || undefined });
+    if (!salvo) return;
+    const d = await acao('sugerir-nomes', {});
+    if (!d) return;
+    setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia));
+    const l = d.leituraNomes || {};
+    exibirToast((l.sugeridos ?? 0) + ' nome(s) sugerido(s), ' + (l.naoIdentificados ?? 0) + ' não identificado(s).' + (l.erros?.length ? ' ' + l.erros[0] : ''), l.erros?.length ? 'erro' : undefined);
+  };
   const tentarDeNovo = async (etapa) => {
     const d = await acao('tentar-de-novo', { etapa }, 'Tentando de novo.');
     if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
@@ -283,6 +293,29 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                         </label>
                       );
                     })()}
+                    {podeCriar && (() => {
+                      const p = (i.parecidos || []).find((x) => x.igual && x.situacao === 'fora_da_faixa');
+                      return p ? <CorrigirCadastroAntigo api={api} exibirToast={exibirToast} codigo={String(p.codigo)} solicitacaoId={aberta.id} /> : null;
+                    })()}
+                    {podeCriar && i.nome_ia && i.nome_ia.decisao !== 'recusado' && (
+                      <div className="sol-ia-nome" role="note">
+                        <span className="cad-chip cad-chip--andando">Sugerido por IA (pesquisa na web)</span>
+                        {i.nome_ia.estado === 'sugerido' ? (
+                          <>
+                            <p className="sol-meta sol-meta--sem-margem">Na nota: <strong>{i.nome_ia.nome_original}</strong><br />Nome sugerido: <strong>{i.nome_ia.nome_sugerido}</strong>{i.nome_ia.marca ? <> · marca {i.nome_ia.marca}</> : null}{i.nome_ia.modelo ? <> · modelo {i.nome_ia.modelo}</> : null} · confiança {i.nome_ia.confianca}{i.nome_ia.familia_sugerida ? <> · família sugerida {NOMES_FAMILIA[i.nome_ia.familia_sugerida] || i.nome_ia.familia_sugerida}</> : null}</p>
+                            {i.nome_ia.resumo && <p className="sol-meta sol-meta--sem-margem">{i.nome_ia.resumo}</p>}
+                            <p className="sol-meta sol-meta--sem-margem">Fontes: {(i.nome_ia.fontes || []).map((f, n) => <a key={f.url} href={f.url} target="_blank" rel="noreferrer">{f.titulo || 'fonte ' + (n + 1)}</a>).reduce((a, x) => (a.length ? [...a, ' · ', x] : [x]), [])}</p>
+                            {i.nome_ia.ncm_sugerido && !i.ncm_sugerido && <p className="sol-meta sol-meta--sem-margem">NCM encontrado na pesquisa (confira antes de usar): {i.nome_ia.ncm_sugerido} <button type="button" className="sol-link" onClick={() => mudarItem(k, { ncm: i.nome_ia.ncm_sugerido })}>Usar este NCM</button></p>}
+                            {i.nome_ia.decisao === 'aceito' ? <p className="sol-meta sol-meta--sem-margem"><strong>Aceito.</strong> Pode editar o nome acima. O nome da nota fica guardado junto com o cadastro.</p> : (
+                              <div className="sol-botoes">
+                                <button type="button" className="b-btn-outline cad-mini" onClick={() => mudarItem(k, { descricao: i.nome_ia.nome_sugerido, nome_original: i.nome_original || i.descricao, nome_ia: { ...i.nome_ia, decisao: 'aceito' } })}>Aceitar</button>
+                                <button type="button" className="b-btn-outline cad-mini" onClick={() => mudarItem(k, { nome_ia: { ...i.nome_ia, decisao: 'recusado' } })}>Recusar</button>
+                              </div>
+                            )}
+                          </>
+                        ) : <p className="sol-meta sol-meta--sem-margem"><strong>Não identificado.</strong> {i.nome_ia.motivo} Trate manualmente.</p>}
+                      </div>
+                    )}
                     {(() => {
                       const c = (aberta.cadastros || []).find((x) => x.id === i.cadastro_id);
                       if (!c) return null;
@@ -343,6 +376,7 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                   <div className="sol-botoes">
                     <button type="button" className="b-btn-outline cad-mini" onClick={reanalisar} disabled={!!ocupado}>Ler de novo</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={salvar} disabled={!!ocupado}>Salvar edição</button>
+                    <button type="button" className="b-btn-outline cad-mini" onClick={sugerirNomes} disabled={!!ocupado} title="A IA pesquisa na web o que é cada produto (só o nome vai para a pesquisa) e sugere um nome limpo no padrão do catálogo. Você aceita, edita ou recusa.">{ocupado === 'sugerir-nomes' ? 'Pesquisando na web…' : 'Sugerir nomes com IA'}</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={conferirFamiliaIA} disabled={!!ocupado} title="A IA confere se cada produto combina com a família escolhida (ex.: um móvel não é suprimento)">{ocupado === 'conferir-familia' ? 'A IA está conferindo…' : 'Conferir família com a IA'}</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={lerNota} disabled={!!ocupado} title="Lê o PDF da nota fiscal anexado na tarefa e sugere o NCM de cada produto">{ocupado === 'ler-nota' ? 'Lendo a nota…' : 'Ler NCM da nota (PDF)'}</button>
                     {podeEditar && <button type="button" className="b-btn-outline cad-mini" onClick={() => setRecusando(true)} disabled={!!ocupado}>Recusar</button>}
@@ -475,6 +509,7 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
         )}
       </section>
       {!naTarefas && <NcmPainel api={api} exibirToast={exibirToast} />}
+      {!naTarefas && <CorrecoesPainel api={api} exibirToast={exibirToast} />}
     </div>
   );
 }
