@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { sql } from '../api/_lib/db.js';
 import { garantirEsquema } from '../api/_lib/schema.js';
 import { chaveDoEvento } from '../api/_lib/clickup.js';
-import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, tratarEvento } from '../api/_lib/solicitacoes.js';
+import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
 await garantirEsquema();
 const usuario = { email: 'teste-automatizado@skbiscoite' };
@@ -14,7 +14,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD'];
 const limpar = async () => { await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -84,6 +84,28 @@ try {
   const lista = await listarSolicitacoes(sql, { busca: 'teste fictício' });
   assert.ok(lista.length >= 2);
   ok('listagem com busca');
+  console.log('Finalizada no ClickUp / códigos gerados');
+  const enc = await receberTarefa(sql, tarefa('TESTE-ENC', 'Cód 7000 (encerrar)', 'PRODUTO FICTICIO GAMA 1 UN'), { origem: 'teste' });
+  assert.equal(enc.resultado, 'nova');
+  const movida = { ...tarefa('TESTE-ENC', 'Cód 7000 (encerrar)', 'PRODUTO FICTICIO GAMA 1 UN'), status: { status: 'finalizado', type: 'closed' }, date_updated: '2' };
+  assert.equal((await receberTarefa(sql, movida, { origem: 'teste' })).resultado, 'encerrada');
+  s = await detalharSolicitacao(sql, enc.id); assert.equal(s.status, 'finalizada_clickup'); assert.equal(s.status_clickup, 'finalizado');
+  assert.equal((await receberTarefa(sql, movida, { origem: 'teste' })).resultado, 'sem-mudanca');
+  const reaberta = { ...movida, status: { status: 'em progresso', type: 'custom' }, date_updated: '3' };
+  await receberTarefa(sql, reaberta, { origem: 'teste' });
+  s = await detalharSolicitacao(sql, enc.id); assert.equal(s.status, 'aguardando_analise');
+  const jaFechada = { ...tarefa('TESTE-COD', 'Cód 7000 (x)', 'PRODUTO FICTICIO DELTA 1 UN'), status: { status: 'finalizado', type: 'closed' } };
+  assert.equal((await receberTarefa(sql, jaFechada, { origem: 'teste' })).resultado, 'ignorada');
+  ok('finalizada tira da fila, reaberta volta, tarefa já fechada ao chegar é ignorada');
+
+  const cod = await receberTarefa(sql, tarefa('TESTE-COD', 'Cód 7000 (códigos)', 'PRODUTO FICTICIO EPSILON 1 UN\nPRODUTO FICTICIO ZETA 2 UN'), { origem: 'teste' });
+  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999001', descricao: 'PRODUTO FICTICIO EPSILON 1 UN' })).completa, false);
+  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999002', descricao: 'produto ficticio zeta 2 un' })).completa, true);
+  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999003', descricao: 'PRODUTO QUE NAO ESTA EM SOLICITACAO' })).vinculado, false);
+  s = await detalharSolicitacao(sql, cod.id);
+  assert.equal(s.status, 'concluida'); assert.deepEqual(s.itens.map((i) => i.codigo_gerado), ['7999001', '7999002']);
+  assert.ok(s.historico.some((h) => h.acao === 'comentario-nao-enviado')); // teste nunca comenta no ClickUp
+  ok('código gerado liga ao item pelo nome; ao completar, conclui e tenta comentar (teste não envia)');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

@@ -7,7 +7,9 @@ const STATUS = {
   aguardando_analise: ['Aguardando análise', 'andando'],
   aprovada: ['Aprovada', 'ok'],
   processando: ['Processando', 'andando'],
-  concluida: ['Concluída', 'ok'],
+  concluida: ['Códigos gerados', 'ok'],
+  finalizada_clickup: ['Finalizada no ClickUp', 'ok'],
+  cancelada_clickup: ['Cancelada no ClickUp', 'erro'],
   recusada: ['Recusada', 'erro'],
   erro: ['Erro', 'erro'],
 };
@@ -42,6 +44,19 @@ export default function Solicitacoes({ api, exibirToast }) {
     } catch (e) { if (vivo.current) { setErro(e.message); setLista([]); } }
   }, [api, filtros]);
   useEffect(() => { const t = setTimeout(carregar, filtros.busca ? 350 : 0); return () => clearTimeout(t); }, [carregar, filtros.busca]);
+  // Consulta o ClickUp ao abrir a tela e a cada 2 minutos (tarefas movidas para finalizado saem da fila sozinhas).
+  useEffect(() => {
+    let parou = false;
+    const buscar = async () => {
+      try {
+        const r = await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'conferir' } });
+        if (!parou && vivo.current && (r.novas || r.atualizadas || r.encerradas)) carregar();
+      } catch { /* o botão "Buscar no ClickUp" mostra o erro */ }
+    };
+    buscar();
+    const t = setInterval(buscar, 120000);
+    return () => { parou = true; clearInterval(t); };
+  }, [api, carregar]);
   useEffect(() => { api('/api/solicitacoes?config=1').then((c) => vivo.current && setConfig(c)).catch(() => {}); }, [api]);
 
   const abrir = async (id) => {
@@ -83,7 +98,7 @@ export default function Solicitacoes({ api, exibirToast }) {
   };
   const conferir = async () => {
     const r = await acao('conferir', {});
-    if (r) { exibirToast(`${r.lidas} tarefa(s) lidas: ${r.novas} nova(s), ${r.atualizadas} atualizada(s).`); carregar(); }
+    if (r) { exibirToast(`${r.lidas} tarefa(s) lidas: ${r.novas} nova(s), ${r.atualizadas} atualizada(s), ${r.encerradas ?? 0} encerrada(s).`); carregar(); }
   };
   const mudarConfig = async (mudanca) => {
     try { setConfig({ ...config, ...(await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'config', ...mudanca } })) }); } catch (e) { exibirToast(e.message, 'erro'); }
@@ -246,7 +261,7 @@ export default function Solicitacoes({ api, exibirToast }) {
                 <button type="button" className="cad-linha sol-card" onClick={() => abrir(s.id)} disabled={ocupado === 'abrindo'}>
                   <div className="cad-linha__corpo">
                     <strong>{s.titulo}</strong>
-                    <span>{[s.solicitante, `${s.itens} produto${Number(s.itens) === 1 ? '' : 's'}`, s.prefixo_codigo && `faixa ${s.prefixo_codigo}`, quando(s.recebido_em), s.origem === 'teste' ? 'TESTE' : ''].filter(Boolean).join(' · ')}</span>
+                    <span>{[s.solicitante, `${s.itens} produto${Number(s.itens) === 1 ? '' : 's'}`, s.prefixo_codigo && `faixa ${s.prefixo_codigo}`, s.status_clickup && `ClickUp: ${s.status_clickup}`, quando(s.recebido_em), s.origem === 'teste' ? 'TESTE' : ''].filter(Boolean).join(' · ')}</span>
                     {s.sugestao === 'analise' && (s.motivos || [])[0] && <em className="cad-linha__problema">{s.motivos[0]}</em>}
                   </div>
                   <div className="cad-linha__lado"><Chip par={STATUS[s.status]} /> <Chip par={SUGESTAO[s.sugestao]} /></div>

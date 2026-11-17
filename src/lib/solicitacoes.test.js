@@ -119,3 +119,22 @@ test('tarefa de marketing com campos definidos mas vazios não é cadastro', () 
   ] });
   assert.equal(t.ehCadastro, false);
 });
+
+test('família com o código entre parênteses (formulário novo)', () => {
+  assert.equal(prefixoDaFamiliaDoCampo('INTERNO(400)'), '400');
+  assert.equal(prefixoDaFamiliaDoCampo('EXTERNO(300)'), '300');
+  assert.equal(prefixoDaFamiliaDoCampo('SUPRIMENTOS(700)'), '700');
+  assert.equal(prefixoDaFamiliaDoCampo('ATIVO(800)'), '800');
+  assert.equal(prefixoDaFamiliaDoCampo('EMBALAGEM(200)'), '200');
+  assert.equal(prefixoDaFamiliaDoCampo('ENVASE E MATERIA PRIMA(1010)'), '1010');
+  assert.equal(prefixoDaFamiliaDoCampo('INTERNO'), '400'); // formato antigo continua valendo
+  assert.equal(prefixoDaFamiliaDoCampo('COISA(999)'), null);
+});
+
+test('status do ClickUp: finalizado e cancelado encerram, os demais não', () => {
+  const base = { id: '1', name: 'x', custom_fields: [] };
+  assert.equal(lerTarefaClickUp({ ...base, status: { status: 'finalizado', type: 'closed' } }).encerramento, 'finalizada');
+  assert.equal(lerTarefaClickUp({ ...base, status: { status: 'cancelado', type: 'done' } }).encerramento, 'cancelada');
+  assert.equal(lerTarefaClickUp({ ...base, status: { status: 'em progresso', type: 'custom' } }).encerramento, null);
+  assert.equal(lerTarefaClickUp({ ...base, status: { status: 'backlog', type: 'open' } }).encerramento, null);
+});
