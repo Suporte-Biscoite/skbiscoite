@@ -112,6 +112,9 @@ export function garantirEsquema(sql = sqlPadrao) {
       status text NOT NULL DEFAULT 'lido')`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm text`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS entra_na_loja boolean`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_padrao boolean NOT NULL DEFAULT false`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_revisado_em timestamptz`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm_revisado_por text`
     await sql`CREATE INDEX IF NOT EXISTS solicitacao_itens_sol_idx ON solicitacao_itens (solicitacao_id, ordem)`;
     // Cada evento do webhook entra uma vez só: a chave única é o que impede reprocessar o mesmo evento.
     await sql`CREATE TABLE IF NOT EXISTS clickup_eventos (

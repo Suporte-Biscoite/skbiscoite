@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './Cadastro.css';
 import './Solicitacoes.css';
+import NcmPainel from './NcmPainel.jsx';
 
 const STATUS = {
   recebida: ['Recebida', 'espera'],
@@ -21,7 +22,7 @@ const editavel = (s) => ['recebida', 'aguardando_analise'].includes(s.status);
 const podeCriarAgora = (s) => editavel(s) || (s.status === 'aprovada' && !s.lote_id);
 const ICONE = { ok: '✓', andando: '…', erro: '!', pendente: '○', desligado: '–' };
 const PREFIXOS_LOJA = ['300', '400']; // mesma regra do cadastro: só 300/400 entram na loja
-const comPadroes = (lista, prefixo) => lista.map((i) => ({ ...i, ncm: i.ncm ?? '', entra_na_loja: i.entra_na_loja ?? PREFIXOS_LOJA.includes(String(prefixo)) }));
+const comPadroes = (lista, prefixo, ncmPadrao) => lista.map((i) => ({ ...i, ncm: i.ncm || ncmPadrao || '', ncm_padrao_da_familia: ncmPadrao || null, entra_na_loja: i.entra_na_loja ?? PREFIXOS_LOJA.includes(String(prefixo)) }));
 
 function Chip({ par }) {
   const [texto, tom] = par || ['—', 'espera'];
@@ -69,7 +70,7 @@ export default function Solicitacoes({ api, exibirToast }) {
     setOcupado('abrindo');
     try {
       const d = await api(`/api/solicitacoes?id=${id}`);
-      setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); setFaixa(d.prefixo_codigo || ''); setRecusando(false); setMotivo('');
+      setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); setFaixa(d.prefixo_codigo || ''); setRecusando(false); setMotivo('');
     } catch (e) { exibirToast(e.message, 'erro'); } finally { setOcupado(''); }
   };
   const fechar = () => { setAberta(null); carregar(); };
@@ -85,7 +86,7 @@ export default function Solicitacoes({ api, exibirToast }) {
 
   const salvar = async () => {
     const d = await acao('editar', { itens, prefixoCodigo: faixa || undefined }, 'Itens salvos.');
-    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
   };
   // Aprovar usa o que está na tela: se houve mudança, salva antes (assim o que foi aprovado é o que o time viu).
   const aprovar = async () => {
@@ -96,11 +97,11 @@ export default function Solicitacoes({ api, exibirToast }) {
     const salvo = await acao('editar', { itens, prefixoCodigo: faixa || undefined });
     if (!salvo) return;
     const d = await acao('aprovar', {}, 'Aprovada: criando os códigos.');
-    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
   };
   const tentarDeNovo = async (etapa) => {
     const d = await acao('tentar-de-novo', { etapa }, 'Tentando de novo.');
-    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
   };
   const recusar = async () => {
     const d = await acao('recusar', { motivo }, 'Solicitação recusada.');
@@ -127,7 +128,7 @@ export default function Solicitacoes({ api, exibirToast }) {
     const t = setTimeout(async () => {
       try {
         const d = await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'avancar', id: idAberta } });
-        if (!parou && vivo.current) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+        if (!parou && vivo.current) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo, d.ncmPadraoDaFamilia)); }
       } catch (e) { if (!parou && vivo.current) exibirToast(e.message, 'erro'); }
     }, 1500);
     return () => { parou = true; clearTimeout(t); };
@@ -186,7 +187,8 @@ export default function Solicitacoes({ api, exibirToast }) {
                     {i.codigo_gerado && <span>Código: <strong>{i.codigo_gerado}</strong></span>}
                     {podeCriar && (
                       <div className="sol-criacao">
-                        <label>NCM <input className="b-input sol-ncm" inputMode="numeric" maxLength={10} value={i.ncm ?? ''} placeholder="8 números" aria-label={'NCM do produto ' + (k + 1)} onChange={(e) => mudarItem(k, { ncm: e.target.value.replace(/[^\d.]/g, '') })} /></label>
+                        <label>NCM <input className="b-input sol-ncm" inputMode="numeric" maxLength={10} value={i.ncm ?? ''} placeholder={i.ncm_padrao_da_familia ? undefined : 'da nota, 8 números'} aria-label={'NCM do produto ' + (k + 1)} onChange={(e) => mudarItem(k, { ncm: e.target.value.replace(/[^\d.]/g, '') })} /></label>
+                        {i.ncm_padrao_da_familia && String(i.ncm).replace(/[^0-9]/g, '') === i.ncm_padrao_da_familia && <span className="sol-meta">NCM padrão da família: será marcado para revisão.</span>}
                         <label className="sol-incluir"><input type="checkbox" checked={!!i.entra_na_loja} onChange={(e) => mudarItem(k, { entra_na_loja: e.target.checked })} /> Entra na loja (PDV)</label>
                       </div>
                     )}
@@ -328,6 +330,7 @@ export default function Solicitacoes({ api, exibirToast }) {
           </ul>
         )}
       </section>
+      <NcmPainel api={api} exibirToast={exibirToast} />
     </div>
   );
 }

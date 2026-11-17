@@ -6,6 +6,7 @@ import { sql } from '../api/_lib/db.js';
 import { garantirEsquema } from '../api/_lib/schema.js';
 import { chaveDoEvento } from '../api/_lib/clickup.js';
 import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '../api/_lib/criacao.js';
+import { gravarNcmPadrao, listarParaRevisarNcm, revisarNcm } from '../api/_lib/ncm.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
 await garantirEsquema();
@@ -15,7 +16,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM'];
 const limpar = async () => { await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -157,6 +158,32 @@ try {
   assert.equal(trocas, 2); assert.equal(s.etapas.find((e) => e.chave === 'status').estado, 'ok');
   delete process.env.CLICKUP_STATUS_CONCLUIDO;
   ok('status da tarefa: falha aparece, nova tentativa funciona e só atualiza uma vez');
+  console.log('NCM padrão por família e revisão');
+  const nc = await receberTarefa(sql, tarefa('TESTE-NCM', 'Pedido de cadastro', 'PRODUTO FICTICIO CRIACAO DOIS\nPRODUTO FICTICIO CRIACAO TRES', 'EXTERNO(300)'), { origem: 'teste' });
+  s = await aprovarECriar(sql, usuario, nc.id, SEM_PROCESSAR);
+  assert.deepEqual(s.itens.map((i) => i.ncm), ['19059020', '19059020']);
+  assert.ok(s.itens.every((i) => i.ncm_padrao));
+  assert.ok(s.cadastros.every((c) => c.omie_status === 'pendente'));
+  ok('300 sem NCM: usa o padrão 19059020 e marca para revisão');
+  await assert.rejects(() => gravarNcmPadrao(sql, usuario, { 400: '123' }), /8 números/);
+  await assert.rejects(() => gravarNcmPadrao(sql, usuario, { 999: '19059020' }), /desconhecida/);
+  await sql`UPDATE cadastros SET codigo = '3999801', omie_id = 990001, omie_status = 'ok', nexaas_status = 'ok' WHERE lote_id = ${s.lote_id}::uuid AND linha = 1`;
+  await sql`UPDATE cadastros SET codigo = '3999802', omie_id = 990002, omie_status = 'ok', nexaas_status = 'ok' WHERE lote_id = ${s.lote_id}::uuid AND linha = 2`;
+  let textoComentario = '';
+  s = await avancar(sql, usuario, nc.id, { ...SEM_PROCESSAR, enviarComentario: async (_sql, _id, texto) => { textoComentario = texto; return { enviado: true }; } });
+  assert.ok(textoComentario.includes('3999801 - PRODUTO FICTICIO CRIACAO DOIS') && textoComentario.includes('NCM padrão aplicado (19059020)'));
+  ok('comentário avisa que o NCM padrão foi aplicado');
+  let fila = (await listarParaRevisarNcm(sql)).filter((i) => i.solicitacao_id === nc.id);
+  assert.equal(fila.length, 2);
+  const [primeiro, segundo] = fila;
+  assert.equal((await revisarNcm(sql, usuario, primeiro.id, undefined, { consultar: async () => assert.fail('não deve consultar o Omie'), alterar: async () => assert.fail('não deve alterar') })).mudou, false);
+  let enviado = null;
+  const rev2 = await revisarNcm(sql, usuario, segundo.id, '4819.20.00', { consultar: async () => ({ descricao: 'X', valor_unitario: 12.5, unidade: 'UN' }), alterar: async (p) => { enviado = p; } });
+  assert.equal(rev2.mudou, true); assert.ok(rev2.avisoNexaas === null || rev2.avisoNexaas.includes('Nexaas'));
+  assert.equal(enviado.ncm, '4819.20.00'); assert.equal(enviado.valor_unitario, 12.5); assert.equal(enviado.codigo_produto, 990002);
+  assert.equal((await revisarNcm(sql, usuario, segundo.id, '1', { alterar: async () => assert.fail('repetiu') })).jaRevisado, true);
+  assert.equal((await listarParaRevisarNcm(sql)).filter((i) => i.solicitacao_id === nc.id).length, 0);
+  ok('revisão: conferido não mexe no Omie; correção altera o Omie preservando preço; repetir não faz nada');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);
