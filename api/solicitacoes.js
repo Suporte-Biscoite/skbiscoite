@@ -1,14 +1,15 @@
-// api/solicitacoes.js — tela "Solicitações" (só time autorizado). Fase 1: analisa, edita, aprova/recusa; não cria códigos.
+// api/solicitacoes.js — tela "Solicitações" (só time autorizado): analisa, edita, aprova (cria os códigos) ou recusa.
 //   GET                      lista (filtros: status, busca, sugestao)
 //   GET ?id=<n>              detalhe (itens, motivos, histórico)
 //   GET ?config=1            configuração (modo, pausa, limites)
-//   POST { acao: 'editar', id, itens, prefixoCodigo } | 'aprovar' | 'recusar' (motivo) | 'reanalisar'
+//   POST { acao: 'editar', id, itens, prefixoCodigo } | 'aprovar' (cria) | 'avancar' (continua a criação) | 'tentar-de-novo' (etapa) | 'recusar' (motivo) | 'reanalisar'
 //   POST { acao: 'conferir' }              busca no ClickUp o que o webhook perdeu
 //   POST { acao: 'config', ... }           pausa, modo (analisar|simulacao), limite de itens, intervalo
 import { sql } from './_lib/db.js';
 import { exigirUsuario } from './_lib/sessao.js';
 import { garantirEsquema } from './_lib/schema.js';
 import { clickupConfigurado } from './_lib/clickup.js';
+import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { conferirLista, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
 const SETORES = (process.env.SOLICITACOES_SETORES || 'TI').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -40,7 +41,10 @@ export default async function handler(req, res) {
     const n = Number(id);
     if (!Number.isInteger(n)) return res.status(400).json({ error: 'Solicitação inválida.' });
     if (acao === 'editar') { await editarItens(sql, usuario, n, { itens, prefixoCodigo }); return res.status(200).json(await detalharSolicitacao(sql, n)); }
-    if (acao === 'aprovar') { await decidir(sql, usuario, n, { aprovar: true }); return res.status(200).json(await detalharSolicitacao(sql, n)); }
+    // Aprovar = autorizar a criação desta solicitação (vale mesmo no modo 'Só analisar'); cria na mesma fila do gerador individual.
+    if (acao === 'aprovar') return res.status(200).json(await aprovarECriar(sql, usuario, n));
+    if (acao === 'avancar') return res.status(200).json(await avancar(sql, usuario, n));
+    if (acao === 'tentar-de-novo') return res.status(200).json(await tentarDeNovo(sql, usuario, n, String(req.body.etapa || 'criacao')));
     if (acao === 'recusar') { await decidir(sql, usuario, n, { aprovar: false, motivo }); return res.status(200).json(await detalharSolicitacao(sql, n)); }
     if (acao === 'reanalisar') {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });

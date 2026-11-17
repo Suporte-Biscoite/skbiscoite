@@ -238,9 +238,12 @@ async function pegarNexaas(sql, loteId, n) {
 }
 
 // Processa o que couber em `orcamentoMs`. O navegador chama de novo enquanto restar trabalho.
-export async function processarLote(sql, loteId, { orcamentoMs = 25000, concorrencia = 2 } = {}) {
+export async function processarLote(sql, loteId, { orcamentoMs = 25000, concorrencia = 2, esperaEntreRodadasMs = 0 } = {}) {
   const inicio = Date.now();
+  let primeira = true;
   while (Date.now() - inicio < orcamentoMs) {
+    if (!primeira && esperaEntreRodadasMs) await new Promise((r) => setTimeout(r, esperaEntreRodadasMs));
+    primeira = false;
     const paraOmie = await pegarOmie(sql, loteId, concorrencia);
     const paraNexaas = paraOmie.length ? [] : await pegarNexaas(sql, loteId, concorrencia);
     if (paraOmie.length === 0 && paraNexaas.length === 0) break;

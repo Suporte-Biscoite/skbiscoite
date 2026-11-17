@@ -96,17 +96,22 @@ export function lerTarefaClickUp(tarefa) {
     const iguais = (tarefa.custom_fields || []).filter((c) => normalizarTexto(c.name) === normalizarTexto(nome));
     return iguais.find(temValor);
   };
-  const dropdown = (nome) => {
-    const c = campo(nome);
-    if (!c) return '';
+  const valorDoDropdown = (c) => {
     if (typeof c.value === 'object') return c.value.name ?? '';
     const op = (c.type_config?.options || []).find((o) => o.orderindex === c.value || o.id === c.value);
     return op?.name ?? '';
   };
+  const dropdown = (nome) => { const c = campo(nome); return c ? valorDoDropdown(c) : ''; };
+  // Cada campo é uma instância com ID próprio (há dois "Família de Produto"): olhamos TODAS as preenchidas.
+  const todasPreenchidas = (nome) => (tarefa.custom_fields || [])
+    .filter((c) => normalizarTexto(c.name) === normalizarTexto(nome) && temValor(c))
+    .map((c) => ({ id: c.id, valor: valorDoDropdown(c) })).filter((x) => x.valor);
   const solicitante = campo('Quem está solicitando')?.value?.[0];
   const descricao = tarefa.text_content ?? tarefa.description ?? tarefa.markdown_description ?? '';
   const familiaCampo = dropdown('Família de Produto');
   const tipoIdentificacao = dropdown('Tipo de Identificação');
+  const familiasPreenchidas = todasPreenchidas('Família de Produto');
+  const familiasDivergentes = [...new Set(familiasPreenchidas.map((x) => x.valor))].length > 1 ? familiasPreenchidas : [];
   const statusNome = typeof tarefa.status === 'string' ? tarefa.status : tarefa.status?.status ?? '';
   const statusTipo = typeof tarefa.status === 'object' ? tarefa.status?.type ?? '' : '';
   // "finalizado" (closed) e "cancelado"/"projetos" (done) tiram a tarefa da fila de análise.
@@ -119,6 +124,7 @@ export function lerTarefaClickUp(tarefa) {
     statusClickUp: statusNome,
     encerramento,
     familiaCampo,
+    familiasDivergentes,
     tipoIdentificacao,
     solicitante: solicitante?.username ?? tarefa.creator?.username ?? '',
     atualizadoEm: Number(tarefa.date_updated) || 0,
@@ -157,17 +163,18 @@ export function analisarSolicitacao(tarefa, catalogo = [], config = CONFIG_PADRA
   if (!familiaPrefixo) motivos.push('Família de Produto não informada ou não reconhecida.');
   if (faixa && !faixaPrefixo) motivos.push(`O código ${faixa} do título não corresponde a nenhuma família conhecida.`);
   if (faixaPrefixo && familiaPrefixo && faixaPrefixo !== familiaPrefixo) motivos.push(`Conflito: o título pede o código ${faixa} (família ${faixaPrefixo}) mas o campo Família de Produto é ${tarefa.familiaCampo} (${familiaPrefixo}).`);
-  if (!faixa && familiaPrefixo === '700') motivos.push('Família SUPRIMENTOS tem várias faixas (7000, 7001...) e o título não diz qual.');
+  if (tarefa.familiasDivergentes?.length) motivos.push(`Dois campos "Família de Produto" preenchidos com valores diferentes (${tarefa.familiasDivergentes.map((x) => x.valor).join(' x ')}).`);
   if (itens.length === 0) motivos.push('Nenhum produto encontrado na descrição nem no título.');
   if (itens.length > config.limiteItensAuto) motivos.push(`${itens.length} itens (o automático vai até ${config.limiteItensAuto}).`);
   if (itens.some((i) => i.codigoExistente)) { rota = 'importar'; motivos.push('Cita código que já existe no Omie: provavelmente é para levar ao Nexaas (aba Importar do Omie), não criar código novo.'); }
   if (todosAvisos.length) motivos.push('Linhas com problema de leitura (veja os avisos).');
   if (itens.some((i) => i.parecidos.length)) motivos.push('Há produto igual ou parecido já cadastrado no Omie.');
   if (usouTitulo) motivos.push('Sem descrição: o produto foi lido do título.');
-  if (ignoradas.length) motivos.push(`${ignoradas.length} linha(s) ignorada(s) (repetidas ou cabeçalho).`);
+  const repetidas = ignoradas.filter((i) => i.motivo.startsWith('repetida'));
+  if (repetidas.length) motivos.push(`${repetidas.length} linha(s) repetida(s) foram juntadas em uma só.`);
 
   return {
-    itens, ignoradas, faixa, familiaPrefixo, prefixoCodigo: faixa && faixaPrefixo === familiaPrefixo ? faixa : familiaPrefixo, rota,
+    itens, ignoradas, faixa, familiaPrefixo, prefixoCodigo: familiaPrefixo, rota,
     sugestao: motivos.length === 0 ? 'automatica' : 'analise', motivos,
   };
 }

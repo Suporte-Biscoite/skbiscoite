@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { sql } from '../api/_lib/db.js';
 import { garantirEsquema } from '../api/_lib/schema.js';
 import { chaveDoEvento } from '../api/_lib/clickup.js';
+import { aprovarECriar, atualizarStatusDaTarefa, avancar, tentarDeNovo } from '../api/_lib/criacao.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
 await garantirEsquema();
@@ -14,8 +15,8 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD'];
-const limpar = async () => { await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA'];
+const limpar = async () => { await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -25,8 +26,8 @@ try {
   const r1 = await receberTarefa(sql, tarefa('TESTE-5', 'Cód 7000 (teste fictício)', cinco), { origem: 'teste' });
   assert.equal(r1.resultado, 'nova');
   let s = await detalharSolicitacao(sql, r1.id);
-  assert.equal(s.itens.length, 5); assert.equal(s.status, 'aguardando_analise'); assert.equal(s.sugestao, 'automatica'); assert.equal(s.prefixo_codigo, '7000');
-  ok('5 itens lidos, faixa 7000, sugestão "automática" (mas nada é criado: status aguardando análise)');
+  assert.equal(s.itens.length, 5); assert.equal(s.status, 'aguardando_analise'); assert.equal(s.sugestao, 'automatica'); assert.equal(s.prefixo_codigo, '700');
+  ok('5 itens lidos, prefixo 700, sugestão "automática" (mas nada é criado: status aguardando análise)');
   await editarItens(sql, usuario, r1.id, { itens: s.itens.map((i, k) => (k === 0 ? { ...i, descricao: 'produto fictício alfa editado' } : i)) });
   s = await detalharSolicitacao(sql, r1.id);
   assert.equal(s.itens[0].descricao, 'PRODUTO FICTÍCIO ALFA EDITADO'); assert.equal(s.editado, true);
@@ -99,13 +100,63 @@ try {
   ok('finalizada tira da fila, reaberta volta, tarefa já fechada ao chegar é ignorada');
 
   const cod = await receberTarefa(sql, tarefa('TESTE-COD', 'Cód 7000 (códigos)', 'PRODUTO FICTICIO EPSILON 1 UN\nPRODUTO FICTICIO ZETA 2 UN'), { origem: 'teste' });
-  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999001', descricao: 'PRODUTO FICTICIO EPSILON 1 UN' })).completa, false);
-  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999002', descricao: 'produto ficticio zeta 2 un' })).completa, true);
-  assert.equal((await registrarCodigoGerado(sql, { id: 0, codigo: '7999003', descricao: 'PRODUTO QUE NAO ESTA EM SOLICITACAO' })).vinculado, false);
+  assert.equal((await registrarCodigoGerado(sql, { id: 900001, codigo: '7999001', descricao: 'PRODUTO FICTICIO EPSILON 1 UN' })).completa, false);
+  assert.equal((await registrarCodigoGerado(sql, { id: 900002, codigo: '7999002', descricao: 'produto ficticio zeta 2 un' })).completa, true);
+  assert.equal((await registrarCodigoGerado(sql, { id: 900003, codigo: '7999003', descricao: 'PRODUTO QUE NAO ESTA EM SOLICITACAO' })).vinculado, false);
   s = await detalharSolicitacao(sql, cod.id);
   assert.equal(s.status, 'concluida'); assert.deepEqual(s.itens.map((i) => i.codigo_gerado), ['7999001', '7999002']);
   assert.ok(s.historico.some((h) => h.acao === 'comentario-nao-enviado')); // teste nunca comenta no ClickUp
   ok('código gerado liga ao item pelo nome; ao completar, conclui e tenta comentar (teste não envia)');
+  console.log('Aprovar -> fila -> comentário -> status (sem criar nada de verdade)');
+  const SEM_PROCESSAR = { orcamentoMs: 0 }; // nunca chama Omie/Nexaas nos testes
+  const cr = await receberTarefa(sql, tarefa('TESTE-CRIA', 'Pedido de cadastro', 'PRODUTO FICTICIO CRIACAO UM', 'SUPRIMENTOS(700)'), { origem: 'teste' });
+  s = await detalharSolicitacao(sql, cr.id);
+  assert.equal(s.sugestao, 'automatica'); assert.deepEqual(s.motivos, []); assert.equal(s.prefixo_codigo, '700');
+  ok('SUPRIMENTOS(700) sem faixa no título: sem alerta, prefixo 700');
+  await assert.rejects(() => aprovarECriar(sql, usuario, cr.id, SEM_PROCESSAR), /NCM/);
+  s = await detalharSolicitacao(sql, cr.id); assert.equal(s.status, 'aguardando_analise'); assert.equal(s.lote_id, null);
+  ok('sem NCM: não aprova e não cria nada (continua em análise)');
+  await editarItens(sql, usuario, cr.id, { itens: s.itens.map((i) => ({ ...i, ncm: '49019900', entra_na_loja: false })) });
+  s = await aprovarECriar(sql, usuario, cr.id, SEM_PROCESSAR);
+  assert.ok(s.lote_id); assert.equal(s.cadastros.length, 1); assert.equal(s.cadastros[0].omie_status, 'pendente');
+  const idLote = s.lote_id;
+  s = await aprovarECriar(sql, usuario, cr.id, SEM_PROCESSAR);
+  assert.equal(s.lote_id, idLote);
+  const [{ qtd }] = await sql`SELECT count(*)::int AS qtd FROM cadastros WHERE descricao = 'PRODUTO FICTICIO CRIACAO UM'`;
+  assert.equal(qtd, 1);
+  ok('aprovar entra na fila (modo "Só analisar" não impede); aprovar de novo não duplica');
+  assert.ok(s.etapas.find((e) => e.chave === 'omie').estado === 'pendente');
+  // Simula o Omie e o Nexaas (o código vem da faixa 700, em sequência)
+  await sql`UPDATE cadastros SET codigo = '7999801', omie_status = 'ok', nexaas_status = 'ok' WHERE lote_id = ${idLote}::uuid`;
+  let chamadas = 0, falhar = true;
+  const enviarComentario = async () => { chamadas++; if (falhar) throw new Error('ClickUp fora do ar'); return { enviado: true }; };
+  s = await avancar(sql, usuario, cr.id, { ...SEM_PROCESSAR, enviarComentario });
+  assert.equal(s.itens[0].codigo_gerado, '7999801');
+  assert.equal(s.etapas.find((e) => e.chave === 'comentario').estado, 'erro');
+  assert.ok(s.etapas.find((e) => e.chave === 'comentario').erro.includes('fora do ar'));
+  s = await avancar(sql, usuario, cr.id, { ...SEM_PROCESSAR, enviarComentario });
+  assert.equal(chamadas, 1); // não fica insistindo sozinho
+  ok('falha no comentário aparece na etapa, com o motivo; não repete sozinha');
+  falhar = false;
+  s = await tentarDeNovo(sql, usuario, cr.id, 'comentario', { ...SEM_PROCESSAR, enviarComentario, existentes: undefined });
+  assert.equal(chamadas, 2); assert.equal(s.etapas.find((e) => e.chave === 'comentario').estado, 'ok'); assert.equal(s.status, 'concluida');
+  s = await avancar(sql, usuario, cr.id, { ...SEM_PROCESSAR, enviarComentario });
+  s = await tentarDeNovo(sql, usuario, cr.id, 'comentario', { ...SEM_PROCESSAR, enviarComentario });
+  assert.equal(chamadas, 2);
+  ok('tentar de novo envia 1 comentário; repetir etapa/avançar não duplica');
+  process.env.CLICKUP_STATUS_CONCLUIDO = 'finalizado';
+  let trocas = 0, quebrar = true;
+  const trocarStatus = async (_tarefa, novo) => { trocas++; if (quebrar) throw new Error('sem permissão'); assert.equal(novo, 'finalizado'); };
+  await atualizarStatusDaTarefa(sql, cr.id, { atualizarStatus: trocarStatus });
+  s = await detalharSolicitacao(sql, cr.id);
+  assert.equal(s.etapas.find((e) => e.chave === 'status').estado, 'erro');
+  quebrar = false;
+  await atualizarStatusDaTarefa(sql, cr.id, { atualizarStatus: trocarStatus });
+  await atualizarStatusDaTarefa(sql, cr.id, { atualizarStatus: trocarStatus });
+  s = await detalharSolicitacao(sql, cr.id);
+  assert.equal(trocas, 2); assert.equal(s.etapas.find((e) => e.chave === 'status').estado, 'ok');
+  delete process.env.CLICKUP_STATUS_CONCLUIDO;
+  ok('status da tarefa: falha aparece, nova tentativa funciona e só atualiza uma vez');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 import { sql as sqlPadrao } from './db.js';
 import { lerEstado, gravarEstado } from './catalogo.js';
 import { CONFIG_PADRAO, analisarSolicitacao, lerTarefaClickUp, prepararCatalogo } from '../../src/lib/solicitacoes.js';
-import { buscarTarefa, comentarTarefa, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
+import { obterFamiliaPorPrefixo } from '../../src/lib/familias.js';
+import { buscarTarefa, comentarTarefa, listarComentarios, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
 
 // ---------- Configuração (guardada no banco; botão de pausa e modo) ----------
 export async function lerConfig(sql = sqlPadrao) {
@@ -178,15 +179,18 @@ export async function detalharSolicitacao(sql, id) {
   if (!s) return null;
   const itens = await sql`SELECT id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, codigo_gerado, status FROM solicitacao_itens WHERE solicitacao_id = ${id} ORDER BY ordem`;
   const historico = await sql`SELECT usuario, acao, detalhe, em FROM solicitacoes_log WHERE solicitacao_id = ${id} ORDER BY em DESC LIMIT 50`;
-  return { ...s, itens, historico };
+  const cadastros = s.lote_id ? await sql`SELECT id, linha, descricao, codigo, omie_status, omie_erro, nexaas_status, nexaas_erro, atualizado_em FROM cadastros WHERE lote_id = ${s.lote_id} ORDER BY id` : [];
+  return { ...s, itens, historico, cadastros, etapas: montarEtapas(s, cadastros), statusConcluido: process.env.CLICKUP_STATUS_CONCLUIDO || null };
 }
 
 const ESTADOS_EDITAVEIS = ['aguardando_analise', 'recebida'];
+const HONRAR_PREFIXO = (p) => (obterFamiliaPorPrefixo(p) ? String(p) : null);
 
 export async function editarItens(sql, usuario, id, { itens, prefixoCodigo }) {
-  const [s] = await sql`SELECT status FROM solicitacoes WHERE id = ${id}`;
+  const [s] = await sql`SELECT status, lote_id FROM solicitacoes WHERE id = ${id}`;
   if (!s) throw new Error('Solicitação não encontrada.');
-  if (!ESTADOS_EDITAVEIS.includes(s.status)) throw new Error('Esta solicitação já foi decidida e não pode mais ser editada.');
+  // Aprovada que ainda não foi para a fila (nada criado) também pode ser ajustada (ex.: preencher o NCM).
+  if (!ESTADOS_EDITAVEIS.includes(s.status) && !(s.status === 'aprovada' && !s.lote_id)) throw new Error('Esta solicitação já foi decidida e não pode mais ser editada.');
   if (!Array.isArray(itens) || itens.length > 200) throw new Error('Lista de itens inválida.');
   await sql`DELETE FROM solicitacao_itens WHERE solicitacao_id = ${id}`;
   let ordem = 0;
@@ -195,8 +199,10 @@ export async function editarItens(sql, usuario, id, { itens, prefixoCodigo }) {
     if (!descricao) continue;
     if (descricao.length > 120) throw new Error(`"${descricao.slice(0, 30)}…" passa de 120 caracteres.`);
     ordem += 1;
-    await sql`INSERT INTO solicitacao_itens (solicitacao_id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido)
-      VALUES (${id}, ${ordem}, ${item.linha ?? null}, ${item.original ?? null}, ${descricao}, ${JSON.stringify(item.avisos || [])}::jsonb, ${JSON.stringify(item.parecidos || [])}::jsonb, ${item.codigo_existente ?? null}, ${item.incluido !== false})`;
+    const ncm = String(item.ncm ?? '').replace(/\D/g, '') || null;
+    const entra = typeof item.entra_na_loja === 'boolean' ? item.entra_na_loja : null;
+    await sql`INSERT INTO solicitacao_itens (solicitacao_id, ordem, linha, original, descricao, avisos, parecidos, codigo_existente, incluido, ncm, entra_na_loja, codigo_gerado, cadastro_id)
+      VALUES (${id}, ${ordem}, ${item.linha ?? null}, ${item.original ?? null}, ${descricao}, ${JSON.stringify(item.avisos || [])}::jsonb, ${JSON.stringify(item.parecidos || [])}::jsonb, ${item.codigo_existente ?? null}, ${item.incluido !== false}, ${ncm}, ${entra}, NULL, NULL)`;
   }
   if (prefixoCodigo !== undefined && !/^\d{3,4}$/.test(String(prefixoCodigo))) throw new Error('Faixa de código inválida (use 3 ou 4 números, ex.: 7000).');
   await sql`UPDATE solicitacoes SET editado = true, prefixo_codigo = COALESCE(${prefixoCodigo ?? null}, prefixo_codigo), atualizado_em = now() WHERE id = ${id}`;
@@ -229,6 +235,28 @@ export async function reanalisar(sql, usuario, id) {
   return r;
 }
 
+// Etapas mostradas na tela: Aprovada, Na fila, Omie, Nexaas, Comentário, Status. estado: ok | andando | erro | pendente | desligado
+export function montarEtapas(s, cadastros) {
+  const todos = (fn) => cadastros.length > 0 && cadastros.every(fn);
+  const algum = (fn) => cadastros.some(fn);
+  const ultima = (campo) => cadastros.map((c) => c[campo]).filter(Boolean).sort().pop() ?? null;
+  const erroOmie = cadastros.find((c) => c.omie_status === 'erro');
+  const erroNexaas = cadastros.find((c) => c.nexaas_status === 'erro');
+  const aprovada = ['aprovada', 'na_fila', 'processando', 'concluida'].includes(s.status);
+  const estadoOmie = erroOmie ? 'erro' : todos((c) => c.omie_status === 'ok') ? 'ok' : s.lote_id ? (algum((c) => c.omie_status === 'criando') ? 'andando' : 'pendente') : 'pendente';
+  const estadoNexaas = erroNexaas ? 'erro' : todos((c) => c.nexaas_status === 'ok') ? 'ok' : estadoOmie === 'ok' ? 'andando' : 'pendente';
+  const codigosOk = estadoOmie === 'ok' && estadoNexaas === 'ok';
+  const statusConfigurado = !!process.env.CLICKUP_STATUS_CONCLUIDO;
+  return [
+    { chave: 'aprovada', rotulo: 'Aprovada', estado: aprovada ? 'ok' : 'pendente', quando: aprovada ? s.decidido_em : null, erro: null },
+    { chave: 'fila', rotulo: 'Na fila', estado: s.na_fila_em ? 'ok' : 'pendente', quando: s.na_fila_em, erro: null },
+    { chave: 'omie', rotulo: 'Criando no Omie (código)', estado: estadoOmie, quando: estadoOmie === 'ok' ? ultima('atualizado_em') : null, erro: erroOmie ? `${erroOmie.descricao}: ${erroOmie.omie_erro}` : null },
+    { chave: 'nexaas', rotulo: 'Criando no Nexaas', estado: estadoNexaas, quando: estadoNexaas === 'ok' ? s.codigos_em : null, erro: erroNexaas ? `${erroNexaas.descricao}: ${erroNexaas.nexaas_erro}` : null },
+    { chave: 'comentario', rotulo: 'Comentário enviado ao ClickUp', estado: s.comentado_em ? 'ok' : s.comentario_erro ? 'erro' : codigosOk ? 'andando' : 'pendente', quando: s.comentado_em, erro: s.comentario_erro },
+    { chave: 'status', rotulo: 'Status da tarefa atualizado', estado: s.status_atualizado_em ? 'ok' : s.status_erro ? 'erro' : !statusConfigurado ? 'desligado' : s.comentado_em ? 'andando' : 'pendente', quando: s.status_atualizado_em, erro: s.status_erro || (!statusConfigurado ? 'Aguardando você confirmar qual status significa "concluído" (CLICKUP_STATUS_CONCLUIDO).' : null) },
+  ];
+}
+
 // Comentário de retorno na tarefa. Só sai se CLICKUP_COMENTAR=1 (desligado por padrão na Fase 1).
 export async function comentarResultado(sql, id, texto) {
   const config = await lerConfig(sql);
@@ -243,26 +271,55 @@ export async function comentarResultado(sql, id, texto) {
 // no item; quando todos os itens da solicitação têm código, marca como concluída e comenta na tarefa do ClickUp.
 export async function registrarCodigoGerado(sql, cadastro) {
   if (!cadastro?.codigo || !cadastro.descricao) return { vinculado: false };
+  // Cadastro que nasceu de uma aprovação já é acompanhado por avancar() (api/_lib/criacao.js): não vincula por nome.
+  const [daFila] = await sql`SELECT 1 FROM solicitacao_itens WHERE cadastro_id = ${cadastro.id} LIMIT 1`;
+  if (daFila) return { vinculado: true, completa: false };
   const [item] = await sql`SELECT i.id, i.solicitacao_id FROM solicitacao_itens i JOIN solicitacoes s ON s.id = i.solicitacao_id
     WHERE upper(trim(i.descricao)) = ${String(cadastro.descricao).trim().toUpperCase()} AND i.incluido AND i.codigo_gerado IS NULL
-      AND s.status IN ('recebida', 'aguardando_analise', 'aprovada', 'processando') ORDER BY s.recebido_em LIMIT 1`;
+      AND s.lote_id IS NULL AND s.status IN ('recebida', 'aguardando_analise', 'aprovada') ORDER BY s.recebido_em LIMIT 1`;
   if (!item) return { vinculado: false };
   await sql`UPDATE solicitacao_itens SET codigo_gerado = ${cadastro.codigo}, cadastro_id = ${cadastro.id}, status = 'codigo_gerado' WHERE id = ${item.id}`;
   await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', 'codigo-gerado', ${JSON.stringify({ codigo: cadastro.codigo })}::jsonb)`;
   const [{ faltam }] = await sql`SELECT count(*)::int AS faltam FROM solicitacao_itens WHERE solicitacao_id = ${item.solicitacao_id} AND incluido AND codigo_gerado IS NULL`;
   if (faltam > 0) return { vinculado: true, completa: false };
   await sql`UPDATE solicitacoes SET status = 'concluida', atualizado_em = now() WHERE id = ${item.solicitacao_id}`;
-  const pronta = await sql`UPDATE solicitacoes SET comentado_em = now() WHERE id = ${item.solicitacao_id} AND comentado_em IS NULL RETURNING id`;
-  if (!pronta.length) return { vinculado: true, completa: true };
-  const itens = await sql`SELECT codigo_gerado, descricao FROM solicitacao_itens WHERE solicitacao_id = ${item.solicitacao_id} AND incluido ORDER BY ordem`;
-  const texto = `Códigos gerados pelo SKBiscoitê:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}`;
-  try {
-    const r = await comentarResultado(sql, item.solicitacao_id, texto);
-    if (!r.enviado) await sql`UPDATE solicitacoes SET comentado_em = NULL WHERE id = ${item.solicitacao_id}`;
-    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', ${r.enviado ? 'comentou-no-clickup' : 'comentario-nao-enviado'}, ${JSON.stringify({ motivo: r.motivo ?? null })}::jsonb)`;
-  } catch (erro) {
-    await sql`UPDATE solicitacoes SET comentado_em = NULL WHERE id = ${item.solicitacao_id}`;
-    await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${item.solicitacao_id}, 'sistema', 'comentario-falhou', ${JSON.stringify({ erro: String(erro.message).slice(0, 200) })}::jsonb)`;
-  }
+  await comentarCodigos(sql, item.solicitacao_id);
   return { vinculado: true, completa: true };
+}
+
+// Comenta na tarefa a lista "código - produto". Idempotente: só um comentário por solicitação (comentado_em é a trava).
+// Se uma tentativa anterior falhou, confere os comentários da tarefa antes de reenviar (evita duplicar se a resposta se perdeu).
+export async function comentarCodigos(sql, id, { enviar = comentarResultado, existentes = listarComentarios } = {}) {
+  const [s] = await sql`SELECT clickup_task_id, comentario_erro, origem FROM solicitacoes WHERE id = ${id}`;
+  if (!s) throw new Error('Solicitação não encontrada.');
+  const trava = await sql`UPDATE solicitacoes SET comentado_em = now() WHERE id = ${id} AND comentado_em IS NULL RETURNING id`;
+  if (!trava.length) return { enviado: true, jaEnviado: true };
+  const itens = await sql`SELECT codigo_gerado, descricao FROM solicitacao_itens WHERE solicitacao_id = ${id} AND incluido AND codigo_gerado IS NOT NULL ORDER BY ordem`;
+  const marca = `(solicitação #${id})`;
+  const texto = `Códigos gerados pelo SKBiscoitê ${marca}:\n\n${itens.map((i) => `${i.codigo_gerado} - ${i.descricao}`).join('\n')}`;
+  const registrar = (acao, detalhe) => sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', ${acao}, ${JSON.stringify(detalhe)}::jsonb)`;
+  try {
+    if (s.comentario_erro && s.origem !== 'teste') {
+      const r = await existentes(s.clickup_task_id).catch(() => ({ comments: [] }));
+      if ((r.comments || []).some((c) => String(c.comment_text ?? '').includes(marca))) {
+        await sql`UPDATE solicitacoes SET comentario_erro = NULL WHERE id = ${id}`;
+        await registrar('comentario-ja-existia', {});
+        return { enviado: true, jaEnviado: true };
+      }
+    }
+    const r = await enviar(sql, id, texto);
+    if (!r.enviado) {
+      await sql`UPDATE solicitacoes SET comentado_em = NULL, comentario_erro = ${r.motivo ?? 'Não enviado.'} WHERE id = ${id}`;
+      await registrar('comentario-nao-enviado', { motivo: r.motivo ?? null });
+      return { enviado: false, motivo: r.motivo };
+    }
+    await sql`UPDATE solicitacoes SET comentario_erro = NULL WHERE id = ${id}`;
+    await registrar('comentou-no-clickup', {});
+    return { enviado: true };
+  } catch (erro) {
+    const msg = String(erro.message).slice(0, 300);
+    await sql`UPDATE solicitacoes SET comentado_em = NULL, comentario_erro = ${msg} WHERE id = ${id}`;
+    await registrar('comentario-falhou', { erro: msg });
+    return { enviado: false, motivo: msg };
+  }
 }

@@ -51,6 +51,8 @@ export const buscarTarefa = (id) => chamar('GET', `/task/${encodeURIComponent(id
 export const listarTarefasDaLista = (listaId, { desdeMs = 0, pagina = 0 } = {}) =>
   chamar('GET', `/list/${listaId}/task?page=${pagina}&order_by=updated&reverse=true&include_markdown_description=true&subtasks=false&include_closed=true${desdeMs ? `&date_updated_gt=${desdeMs}` : ''}`);
 
+export const listarComentarios = (id) => chamar('GET', `/task/${encodeURIComponent(id)}/comment`);
+export const atualizarStatusTarefa = (id, status) => chamar('PUT', `/task/${encodeURIComponent(id)}`, { status });
 export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURIComponent(id)}/comment`, { comment_text: texto, notify_all: false });
 
 // ---- Webhook ----
