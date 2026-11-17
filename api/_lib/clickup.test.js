@@ -33,3 +33,11 @@ test('eventos feitos pelo usuário do robô são ignorados (sem loop)', () => {
   assert.equal(eventoDoRobo({ history_items: [{ user: { id: 7 } }] }), false);
   if (antes) process.env.CLICKUP_BOT_USER_ID = antes;
 });
+
+test('assinatura: aceita vários segredos (um por webhook), recusa os demais', () => {
+  const corpo = '{"a":1}';
+  const assinar = (s) => crypto.createHmac('sha256', s).update(corpo).digest('hex');
+  assert.equal(assinaturaValida(corpo, assinar('dois'), 'um,dois'), true);
+  assert.equal(assinaturaValida(corpo, assinar('um'), 'um,dois'), true);
+  assert.equal(assinaturaValida(corpo, assinar('tres'), 'um,dois'), false);
+});
