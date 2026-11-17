@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { sql as sqlPadrao } from './db.js';
 import { lerEstado, gravarEstado } from './catalogo.js';
 import { CONFIG_PADRAO, analisarSolicitacao, lerTarefaClickUp, prepararCatalogo } from '../../src/lib/solicitacoes.js';
-import { buscarTarefa, comentarTarefa, listaMonitorada, listarTarefasDaLista } from './clickup.js';
+import { buscarTarefa, comentarTarefa, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
 
 // ---------- Configuração (guardada no banco; botão de pausa e modo) ----------
 export async function lerConfig(sql = sqlPadrao) {
@@ -136,25 +136,29 @@ export async function tratarEvento(sql, evento, chave) {
 
 // ---------- Conferência periódica: recupera o que o webhook perdeu ----------
 export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
-  const cursor = (await lerEstado(sql, 'clickup_cursor'))?.ate ?? 0;
   const catalogo = await catalogoDoOmie(sql);
   const resumo = { lidas: 0, novas: 0, atualizadas: 0, ignoradas: 0, encerradas: 0 };
-  let maiorData = cursor;
-  for (let pagina = 0; pagina < maximoPaginas; pagina++) {
-    const r = await listarTarefasDaLista(listaMonitorada(), { desdeMs: cursor, pagina });
-    for (const tarefa of r.tasks || []) {
-      resumo.lidas++;
-      maiorData = Math.max(maiorData, Number(tarefa.date_updated) || 0);
-      const x = await receberTarefa(sql, tarefa, { catalogo });
-      if (x.resultado === 'nova') resumo.novas++;
-      else if (x.resultado === 'atualizada') resumo.atualizadas++;
-      else if (x.resultado === 'ignorada') resumo.ignoradas++;
-      else if (x.resultado === 'encerrada') resumo.encerradas++;
+  for (const listaId of listasMonitoradas()) {
+    // Cada lista tem o seu cursor (a mais recente já lida).
+    const chaveCursor = `clickup_cursor_${listaId}`;
+    const cursor = (await lerEstado(sql, chaveCursor))?.ate ?? 0;
+    let maiorData = cursor;
+    for (let pagina = 0; pagina < maximoPaginas; pagina++) {
+      const r = await listarTarefasDaLista(listaId, { desdeMs: cursor, pagina });
+      for (const tarefa of r.tasks || []) {
+        resumo.lidas++;
+        maiorData = Math.max(maiorData, Number(tarefa.date_updated) || 0);
+        const x = await receberTarefa(sql, tarefa, { catalogo });
+        if (x.resultado === 'nova') resumo.novas++;
+        else if (x.resultado === 'atualizada') resumo.atualizadas++;
+        else if (x.resultado === 'ignorada') resumo.ignoradas++;
+        else if (x.resultado === 'encerrada') resumo.encerradas++;
+      }
+      if (r.last_page !== false) break;
     }
-    if (r.last_page !== false) break;
+    // Recua 1 minuto no cursor para nunca perder tarefa alterada na virada.
+    if (maiorData > cursor) await gravarEstado(sql, chaveCursor, { ate: maiorData - 60000 });
   }
-  // Recua 1 minuto no cursor para nunca perder tarefa alterada na virada.
-  if (maiorData > cursor) await gravarEstado(sql, 'clickup_cursor', { ate: maiorData - 60000 });
   return resumo;
 }
 
@@ -164,7 +168,8 @@ export async function listarSolicitacoes(sql, { status = '', busca = '', sugesta
   return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.status_clickup, s.comentado_em, s.recebido_em, s.decidido_em, s.decidido_por,
       (SELECT count(*) FROM solicitacao_itens i WHERE i.solicitacao_id = s.id AND i.incluido) AS itens
     FROM solicitacoes s
-    WHERE (${status} = '' OR s.status = ${status}) AND (${sugestao} = '' OR s.sugestao = ${sugestao}) AND (${busca.trim()} = '' OR s.titulo ILIKE ${b} OR s.solicitante ILIKE ${b})
+    WHERE (CASE WHEN ${status} = '' THEN s.status NOT IN ('finalizada_clickup', 'cancelada_clickup', 'concluida')
+        WHEN ${status} = 'encerradas' THEN s.status IN ('finalizada_clickup', 'cancelada_clickup', 'concluida') ELSE s.status = ${status} END) AND (${sugestao} = '' OR s.sugestao = ${sugestao}) AND (${busca.trim()} = '' OR s.titulo ILIKE ${b} OR s.solicitante ILIKE ${b})
     ORDER BY s.recebido_em DESC LIMIT 200`;
 }
 

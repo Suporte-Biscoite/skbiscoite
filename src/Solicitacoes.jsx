@@ -237,8 +237,9 @@ export default function Solicitacoes({ api, exibirToast }) {
         <div className="sol-filtros">
           <input className="b-input" type="search" placeholder="Buscar por título ou solicitante" aria-label="Buscar" value={filtros.busca} onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })} />
           <select className="b-input" aria-label="Status" value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
-            <option value="">Todos os status</option>
-            {Object.entries(STATUS).map(([v, [t]]) => <option key={v} value={v}>{t}</option>)}
+            <option value="">Em aberto (sem as encerradas)</option>
+            {Object.entries(STATUS).filter(([v]) => !['finalizada_clickup', 'cancelada_clickup', 'concluida'].includes(v)).map(([v, [t]]) => <option key={v} value={v}>{t}</option>)}
+            <option value="encerradas">Encerradas (finalizadas / com códigos)</option>
           </select>
           <select className="b-input" aria-label="Sugestão" value={filtros.sugestao} onChange={(e) => setFiltros({ ...filtros, sugestao: e.target.value })}>
             <option value="">Qualquer leitura</option>

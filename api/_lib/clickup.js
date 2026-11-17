@@ -13,7 +13,9 @@ export class ErroClickUp extends Error {
 }
 
 export const clickupConfigurado = () => !!process.env.CLICKUP_API_TOKEN;
-export const listaMonitorada = () => process.env.CLICKUP_LIST_ID || '901107247151'; // Biscoitech > Painel > Tarefas Gerais
+// Listas lidas: Biscoitech > Solicitações externas > Cadastro (formulário padrão) e Biscoitech > Painel > Tarefas Gerais.
+export const listasMonitoradas = () => String(process.env.CLICKUP_LIST_IDS || process.env.CLICKUP_LIST_ID || '901115380434,901107247151').split(',').map((x) => x.trim()).filter(Boolean);
+export const listaMonitorada = () => listasMonitoradas()[0];
 
 async function chamar(metodo, caminho, corpo, tentativa = 1) {
   const token = process.env.CLICKUP_API_TOKEN;
@@ -53,11 +55,14 @@ export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURICo
 
 // ---- Webhook ----
 // O ClickUp assina o corpo cru com HMAC-SHA256 (cabeçalho X-Signature, em hexadecimal).
-export function assinaturaValida(corpoCru, assinatura, segredo = process.env.CLICKUP_WEBHOOK_SECRET) {
+export function assinaturaValida(corpoCru, assinatura, segredo = [process.env.CLICKUP_WEBHOOK_SECRET, process.env.CLICKUP_WEBHOOK_SECRET_2].filter(Boolean).join(',')) {
   if (!segredo || !assinatura) return false;
-  const esperada = Buffer.from(crypto.createHmac('sha256', segredo).update(corpoCru).digest('hex'));
+  // Cada webhook do ClickUp tem o seu segredo: a variável aceita vários, separados por vírgula.
   const recebida = Buffer.from(String(assinatura));
-  return esperada.length === recebida.length && crypto.timingSafeEqual(esperada, recebida);
+  return String(segredo).split(',').map((s) => s.trim()).filter(Boolean).some((s) => {
+    const esperada = Buffer.from(crypto.createHmac('sha256', s).update(corpoCru).digest('hex'));
+    return esperada.length === recebida.length && crypto.timingSafeEqual(esperada, recebida);
+  });
 }
 
 // Chave única do evento: o mesmo evento reenviado nunca é processado duas vezes.
