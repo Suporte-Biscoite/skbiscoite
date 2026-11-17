@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Cadastro from './Cadastro.jsx';
 import Importar from './Importar.jsx';
 import Solicitacoes from './Solicitacoes.jsx';
+import Ajuda from './Ajuda.jsx';
 import './App.css';
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
@@ -368,6 +369,9 @@ function App() {
               </button>
             </>
           )}
+          <button onClick={() => setModo('ajuda')} aria-current={modo === 'ajuda' ? 'page' : undefined} style={{ background: modo === 'ajuda' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'ajuda' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'ajuda' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+            Ajuda
+          </button>
         </nav>
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-cream)', paddingTop: '1.5rem' }}>
@@ -386,10 +390,19 @@ function App() {
               {modo === 'massa' && 'Importação em Lote'}
               {modo === 'importar' && 'Importar do Omie'}
               {modo === 'solicitacoes' && 'Solicitações'}
+              {modo === 'ajuda' && 'Ajuda'}
               {modo === 'usuarios' && 'Gestão de Equipe'}
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
-            <p>Cadastro integrado: Omie ERP e Nexaas OMS.</p>
+            <p>{{
+              individual: 'Crie o código de um produto no Omie e no Nexaas.',
+              massa: 'Crie vários códigos de uma vez a partir de uma planilha.',
+              importar: 'Leve para o Nexaas produtos que já existem no Omie.',
+              solicitacoes: 'Revise e aprove os pedidos de código que chegam do ClickUp.',
+              ajuda: 'Como o sistema funciona e como analisar os pedidos.',
+              usuarios: 'Quem pode acessar o sistema.',
+              historico: 'Tudo o que já foi criado, com data e responsável.',
+            }[modo] ?? 'Cadastro integrado: Omie ERP e Nexaas OMS.'}</p>
           </div>
           
           <div className="user-profile-widget">
@@ -402,7 +415,8 @@ function App() {
         </header>
 
         {modo === 'importar' && <Importar api={api} exibirToast={exibirToast} />}
-        {modo === 'solicitacoes' && ehTI && <Solicitacoes api={api} exibirToast={exibirToast} />}
+        {modo === 'solicitacoes' && ehTI && <Solicitacoes api={api} exibirToast={exibirToast} aoAbrirAjuda={() => setModo('ajuda')} />}
+        {modo === 'ajuda' && <Ajuda ehTI={ehTI} />}
         {(modo === 'individual' || modo === 'massa') && <Cadastro modo={modo} api={api} exibirToast={exibirToast} />}
 
         {modo === 'usuarios' && ehTI && (
