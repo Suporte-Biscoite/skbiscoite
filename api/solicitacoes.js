@@ -13,7 +13,7 @@ import { lerNotaDaSolicitacao } from './_lib/nota.js';
 import { gravarNcmPadrao, lerNcmPadrao, listarParaRevisarNcm, revisarNcm } from './_lib/ncm.js';
 import { processarFilaAutomatica } from './_lib/automatico.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
-import { conferirLista, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
+import { conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
 
 const SETORES = (process.env.SOLICITACOES_SETORES || 'TI').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 
@@ -26,13 +26,14 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       if (req.query.ncm) return res.status(200).json({ padrao: await lerNcmPadrao(sql), revisar: await listarParaRevisarNcm(sql) });
+      if (req.query.contagem) return res.status(200).json(await contarEmAberto(sql));
       if (req.query.config) return res.status(200).json({ ...(await lerConfig(sql)), clickupConfigurado: clickupConfigurado() });
       if (req.query.id) {
         const id = Number(req.query.id);
         const s = Number.isInteger(id) ? await detalharSolicitacao(sql, id) : null;
         return s ? res.status(200).json(s) : res.status(404).json({ error: 'Solicitação não encontrada.' });
       }
-      return res.status(200).json(await listarSolicitacoes(sql, { status: String(req.query.status || ''), busca: String(req.query.busca || ''), sugestao: String(req.query.sugestao || '') }));
+      return res.status(200).json(await listarSolicitacoes(sql, { status: String(req.query.status || ''), busca: String(req.query.busca || ''), sugestao: String(req.query.sugestao || ''), tipo: String(req.query.tipo || 'cadastro') }));
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 

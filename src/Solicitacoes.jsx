@@ -5,17 +5,49 @@ import NcmPainel from './NcmPainel.jsx';
 
 const STATUS = {
   recebida: ['Recebida', 'espera'],
-  aguardando_analise: ['Aguardando análise', 'andando'],
+  aguardando_analise: ['Para revisar', 'andando'],
   aprovada: ['Aprovada', 'ok'],
-  na_fila: ['Na fila', 'espera'],
-  processando: ['Criando', 'andando'],
-  concluida: ['Códigos gerados', 'ok'],
+  na_fila: ['Na fila para criar', 'espera'],
+  processando: ['Criando códigos', 'andando'],
+  concluida: ['Códigos criados', 'ok'],
   finalizada_clickup: ['Finalizada no ClickUp', 'ok'],
   cancelada_clickup: ['Cancelada no ClickUp', 'erro'],
   recusada: ['Recusada', 'erro'],
   erro: ['Erro', 'erro'],
 };
-const SUGESTAO = { automatica: ['Pequena e limpa', 'ok'], analise: ['Precisa de análise', 'andando'] };
+const SUGESTAO = { automatica: ['Sem alertas', 'ok'], analise: ['Precisa de atenção', 'andando'] };
+const ehAlteracao = (s) => s?.rota === 'alteracao';
+// Em "Outras tarefas" o vocabulário é outro: não há código a criar, só um pedido para tratar.
+const parDoStatus = (s) => {
+  if (ehAlteracao(s) && ['aguardando_analise', 'recebida'].includes(s.status)) return ['Para tratar', 'andando'];
+  if (ehAlteracao(s) && s.status === 'recusada') return ['Dispensada', 'espera'];
+  return STATUS[s.status];
+};
+const parDaLeitura = (s) => (ehAlteracao(s) ? null : SUGESTAO[s.sugestao]);
+// Passos que o time acompanha: 1 revisar -> 2 aprovar -> 3 criar -> 4 avisar no ClickUp.
+const PASSOS = ['Revisar o pedido', 'Aprovar', 'Criar os códigos', 'Avisar no ClickUp'];
+const passoAtual = (s) => {
+  if (['aguardando_analise', 'recebida'].includes(s.status)) return 0;
+  if (['aprovada', 'na_fila'].includes(s.status)) return 1;
+  if (s.status === 'processando') return 2;
+  if (['concluida', 'finalizada_clickup'].includes(s.status)) return 4;
+  return -1;
+};
+const proximoPasso = (s) => {
+  if (ehAlteracao(s)) {
+    if (['aguardando_analise', 'recebida'].includes(s.status)) return 'Este pedido é uma alteração, não um produto novo. Por enquanto resolva direto no ClickUp; depois use "Dispensar" para tirá-lo da lista. Esta área ainda será desenvolvida.';
+    return '';
+  }
+  switch (s.status) {
+    case 'aguardando_analise': case 'recebida':
+      return s.sugestao === 'automatica' ? 'Confira os nomes e o NCM e clique em "Aprovar e criar códigos".' : 'Leia os avisos abaixo, corrija o que for preciso e aprove — ou recuse se o pedido estiver errado.';
+    case 'aprovada': case 'na_fila': return 'Aprovada. O sistema está criando os códigos (pode levar alguns minutos).';
+    case 'processando': return 'Criando os códigos no Omie e no Nexaas. Não precisa fazer nada.';
+    case 'concluida': return 'Pronto: os códigos foram criados e avisados na tarefa do ClickUp.';
+    case 'recusada': return 'Esta solicitação foi recusada e não gerou códigos.';
+    default: return '';
+  }
+};
 const quando = (d) => (d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 const editavel = (s) => ['recebida', 'aguardando_analise'].includes(s.status);
 // Pode preencher NCM/loja e criar: em análise, ou aprovada que ainda não foi para a fila (nada criado).
@@ -35,10 +67,27 @@ function Chip({ par }) {
   return <span className={`cad-chip cad-chip--${tom}`}>{texto}</span>;
 }
 
-export default function Solicitacoes({ api, exibirToast }) {
+function Passos({ s }) {
+  if (ehAlteracao(s)) return null;
+  const atual = passoAtual(s);
+  if (atual < 0) return null;
+  return (
+    <ol className="sol-passos" aria-label="Etapas da solicitação">
+      {PASSOS.map((p, k) => (
+        <li key={p} className={'sol-passo' + (k < atual ? ' sol-passo--feito' : k === atual ? ' sol-passo--atual' : '')} aria-current={k === atual ? 'step' : undefined}>
+          <span className="sol-passo__num" aria-hidden="true">{k < atual ? '✓' : k + 1}</span>
+          <span>{p}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
   const [lista, setLista] = useState(null);
   const [config, setConfig] = useState(null);
-  const [filtros, setFiltros] = useState({ status: '', sugestao: '', busca: '' });
+  const [filtros, setFiltros] = useState({ status: '', sugestao: '', busca: '', tipo: 'cadastro' });
+  const [contagem, setContagem] = useState({ cadastro: 0, tarefas: 0 });
   const [aberta, setAberta] = useState(null); // detalhe da solicitação aberta
   const [itens, setItens] = useState([]);
   const [faixa, setFaixa] = useState('');
@@ -54,6 +103,7 @@ export default function Solicitacoes({ api, exibirToast }) {
       const q = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v)).toString();
       const dados = await api(`/api/solicitacoes${q ? `?${q}` : ''}`);
       if (vivo.current) { setLista(dados); setErro(''); }
+      api('/api/solicitacoes?contagem=1').then((c) => vivo.current && setContagem(c)).catch(() => {});
     } catch (e) { if (vivo.current) { setErro(e.message); setLista([]); } }
   }, [api, filtros]);
   useEffect(() => { const t = setTimeout(carregar, filtros.busca ? 350 : 0); return () => clearTimeout(t); }, [carregar, filtros.busca]);
@@ -153,7 +203,9 @@ export default function Solicitacoes({ api, exibirToast }) {
   // ---------- Detalhe ----------
   if (aberta) {
     const podeEditar = editavel(aberta);
-    const podeCriar = podeCriarAgora(aberta);
+    const alteracao = ehAlteracao(aberta);
+    const podeCriar = podeCriarAgora(aberta) && !alteracao;
+    const dica = proximoPasso(aberta);
     const incluidos = itens.filter((i) => i.incluido !== false && i.descricao.trim()).length;
     return (
       <div className="cad sol">
@@ -161,24 +213,26 @@ export default function Solicitacoes({ api, exibirToast }) {
           <div className="cad-secao__topo">
             <button type="button" className="b-btn-ghost" onClick={fechar}>← Voltar</button>
             <div className="cad-linha__lado">
-              <Chip par={STATUS[aberta.status]} /> <Chip par={SUGESTAO[aberta.sugestao]} />
+              <Chip par={parDoStatus(aberta)} /> {parDaLeitura(aberta) && <Chip par={parDaLeitura(aberta)} />}
             </div>
           </div>
+          <Passos s={aberta} />
+          {dica && <p className="sol-dica" role="note"><strong>O que fazer agora:</strong> {dica}</p>}
           <h3 className="brand-font sol-titulo">{aberta.titulo}</h3>
           <p className="sol-meta">
             {aberta.solicitante && <>Solicitante: <strong>{aberta.solicitante}</strong> · </>}Recebida em {quando(aberta.recebido_em)} ·{' '}
             <a href={aberta.url} target="_blank" rel="noreferrer">Abrir no ClickUp ↗</a>
           </p>
           <dl className="cad-previa sol-previa">
-            <div><dt>Família (campo)</dt><dd>{aberta.familia_campo || '—'}</dd></div>
-            <div><dt>Faixa de código</dt><dd>{podeEditar ? <input className="b-input sol-faixa" inputMode="numeric" value={faixa} maxLength={4} onChange={(e) => setFaixa(e.target.value.replace(/\D/g, ''))} aria-label="Faixa de código" /> : aberta.prefixo_codigo || '—'}</dd></div>
+            <div><dt>Família escolhida no formulário</dt><dd>{aberta.familia_campo || '—'}</dd></div>
+            <div><dt>Código da família</dt><dd>{podeEditar ? <input className="b-input sol-faixa" inputMode="numeric" value={faixa} maxLength={4} onChange={(e) => setFaixa(e.target.value.replace(/\D/g, ''))} aria-label="Faixa de código" /> : aberta.prefixo_codigo || '—'}</dd></div>
             <div><dt>Tipo de identificação</dt><dd>{aberta.tipo_identificacao || '—'}</dd></div>
-            <div><dt>Destino</dt><dd>{aberta.rota === 'importar' ? 'Importar do Omie' : 'Criar código novo'}</dd></div>
+            <div><dt>Tipo do pedido</dt><dd>{alteracao ? 'Alteração (não cria código)' : aberta.rota === 'importar' ? 'Produto já existe: usar "Importar do Omie"' : 'Produto novo (cria código)'}</dd></div>
           </dl>
           {aberta.auto_motivo && <div className="sol-motivos" role="note"><strong>Criação automática</strong><ul><li>{aberta.auto_motivo}</li></ul></div>}
           {(aberta.motivos || []).length > 0 && (
             <div className="sol-motivos" role="note">
-              <strong>Por que precisa de atenção</strong>
+              <strong>{alteracao ? 'Sobre este pedido' : 'Atenção: o que o sistema encontrou'}</strong>
               <ul>{aberta.motivos.map((m) => <li key={m}>{m}</li>)}</ul>
             </div>
           )}
@@ -187,10 +241,10 @@ export default function Solicitacoes({ api, exibirToast }) {
 
         <section className="b-card cad-secao fade-in" aria-labelledby="sol-itens">
           <div className="cad-secao__topo">
-            <h3 id="sol-itens" className="brand-font">Produtos lidos <span className="cad-contagem">{incluidos}</span></h3>
+            <h3 id="sol-itens" className="brand-font">{alteracao ? 'Linhas do pedido' : 'Produtos lidos'} <span className="cad-contagem">{incluidos}</span></h3>
             {podeEditar && <button type="button" className="b-btn-ghost" onClick={() => setItens((l) => [...l, { descricao: '', incluido: true, avisos: [], parecidos: [] }])}>+ Adicionar linha</button>}
           </div>
-          {itens.length === 0 ? <p className="cad-vazio">Nenhum produto foi lido nesta tarefa.</p> : (
+          {itens.length === 0 ? <p className="cad-vazio">{alteracao ? 'Nenhuma linha foi lida. Veja o texto completo no ClickUp.' : 'Nenhum produto foi lido nesta tarefa. Use "+ Adicionar linha" para digitar o nome.'}</p> : (
             <ul className="cad-lista">
               {itens.map((i, k) => (
                 <li key={i.id ?? `n${k}`} className={`cad-linha sol-item ${(i.avisos || []).length ? 'cad-linha--erro' : ''}`}>
@@ -219,6 +273,20 @@ export default function Solicitacoes({ api, exibirToast }) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {alteracao && podeEditar && (
+            <div className="cad-rodape sol-botoes">
+              <span>Esta área ainda está em desenvolvimento: o sistema só separa e mostra estes pedidos. Resolva no ClickUp e depois dispense aqui.</span>
+              <div className="sol-botoes">
+                <a className="b-btn-outline cad-mini" href={aberta.url} target="_blank" rel="noreferrer">Abrir no ClickUp ↗</a>
+                <button type="button" className="b-btn" disabled={!!ocupado} onClick={async () => {
+                  if (!window.confirm('Dispensar tira este pedido da lista. Ele não cria nenhum código. Continuar?')) return;
+                  const d = await acao('recusar', { motivo: 'Alteração tratada fora do sistema (área ainda em desenvolvimento).' }, 'Pedido dispensado.');
+                  if (d) setAberta(d);
+                }}>Dispensar</button>
+              </div>
+            </div>
           )}
 
           {podeCriar && (
@@ -281,47 +349,61 @@ export default function Solicitacoes({ api, exibirToast }) {
   }
 
   // ---------- Lista ----------
+  const naTarefas = filtros.tipo === 'tarefas';
+  const trocarTipo = (tipo) => { setLista(null); setFiltros({ status: '', sugestao: '', busca: '', tipo }); };
+  const modoTexto = config ? (config.modo === 'simulacao' ? 'Simulação' : config.modo === 'automatico' ? (config.pausado ? 'Automático pausado' : 'Automático ligado') : 'Desligada') : '';
   return (
     <div className="cad sol">
       <section className="b-card cad-secao fade-in">
         <div className="cad-secao__topo">
-          <h3 className="brand-font">Solicitações do ClickUp</h3>
-          <button type="button" className="b-btn-ghost" onClick={conferir} disabled={!!ocupado}>{ocupado === 'conferir' ? 'Buscando…' : 'Buscar no ClickUp'}</button>
-        </div>
-        {config && (
-          <div className="sol-config">
-            <span className={'cad-chip cad-chip--' + (config.modo === 'automatico' && !config.pausado ? 'ok' : 'andando')} title="Aprovar manualmente sempre cria; o modo controla só a criação automática">
-              {config.modo === 'simulacao' ? 'Modo simulação' : config.modo === 'automatico' ? (config.pausado ? 'Automático pausado' : 'Automático ligado') : 'Só analisar'}
-            </span>
-            <label className="cad-switch">
-              <input type="checkbox" role="switch" checked={!!config.pausado} onChange={(e) => mudarConfig({ pausado: e.target.checked })} />
-              <span className="cad-switch__trilho" aria-hidden="true" />
-              Criação automática pausada
-            </label>
-            <label className="sol-modo">Modo
-              <select className="b-input" value={config.modo} onChange={(e) => mudarConfig({ modo: e.target.value })}>
-                <option value="analisar">Só analisar</option>
-                <option value="simulacao">Simulação</option>
-                <option value="automatico">Automático (cria sozinho as pequenas e limpas)</option>
-              </select>
-            </label>
+          <div>
+            <h3 className="brand-font">Pedidos que chegam do ClickUp</h3>
+            <p className="sol-meta sol-meta--sem-margem">O sistema lê os pedidos do formulário. Você revisa e aprova; ao aprovar, ele cria os códigos e avisa na tarefa.{aoAbrirAjuda && <> <button type="button" className="sol-link" onClick={aoAbrirAjuda}>Como funciona?</button></>}</p>
           </div>
+          <button type="button" className="b-btn-outline cad-mini" onClick={conferir} disabled={!!ocupado} title="Os pedidos novos já chegam sozinhos. Use se achar que falta algum.">{ocupado === 'conferir' ? 'Buscando…' : 'Atualizar agora'}</button>
+        </div>
+        <div className="sol-abas" role="tablist" aria-label="Tipo de pedido">
+          <button type="button" role="tab" aria-selected={!naTarefas} className={'sol-aba' + (!naTarefas ? ' sol-aba--ativa' : '')} onClick={() => trocarTipo('cadastro')}>Produtos novos <span className="cad-contagem">{contagem.cadastro}</span></button>
+          <button type="button" role="tab" aria-selected={naTarefas} className={'sol-aba' + (naTarefas ? ' sol-aba--ativa' : '')} onClick={() => trocarTipo('tarefas')}>Outras tarefas <span className="cad-contagem">{contagem.tarefas}</span></button>
+        </div>
+        <p className="sol-meta sol-meta--sem-margem">{naTarefas ? 'Pedidos de alteração de nome, ativar ou inativar códigos. Não criam código novo. Esta área ainda será desenvolvida.' : 'Pedidos para criar código de produto novo.'}</p>
+        {config && !naTarefas && (
+          <details className="sol-auto">
+            <summary>Criação automática: <strong>{modoTexto}</strong></summary>
+            <div className="sol-config">
+              <label className="sol-modo">Modo
+                <select className="b-input" value={config.modo} onChange={(e) => mudarConfig({ modo: e.target.value })}>
+                  <option value="analisar">Desligada: eu aprovo cada pedido</option>
+                  <option value="simulacao">Simulação: só mostra o que seria criado</option>
+                  <option value="automatico">Automática: cria sozinho os pedidos simples e sem alerta</option>
+                </select>
+              </label>
+              <label className="cad-switch">
+                <input type="checkbox" role="switch" checked={!!config.pausado} onChange={(e) => mudarConfig({ pausado: e.target.checked })} />
+                <span className="cad-switch__trilho" aria-hidden="true" />
+                Pausar a criação automática
+              </label>
+            </div>
+            <p className="sol-meta sol-meta--sem-margem">Aprovar manualmente sempre funciona, em qualquer modo. Este controle só vale para a criação feita sozinha pelo sistema.</p>
+          </details>
         )}
         {config && !config.clickupConfigurado && (
           <div className="cad-erro" role="note">O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN): o botão "Buscar no ClickUp" e "Ler de novo" ficam indisponíveis. Eventos do webhook também precisam dele para ler a tarefa.</div>
         )}
         <div className="sol-filtros">
-          <input className="b-input" type="search" placeholder="Buscar por título ou solicitante" aria-label="Buscar" value={filtros.busca} onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })} />
+          <input className="b-input" type="search" placeholder="Buscar por título ou nome de quem pediu" aria-label="Buscar" value={filtros.busca} onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })} />
           <select className="b-input" aria-label="Status" value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
-            <option value="">Em aberto (sem as encerradas)</option>
+            <option value="">Em aberto</option>
             {Object.entries(STATUS).filter(([v]) => !['finalizada_clickup', 'cancelada_clickup', 'concluida'].includes(v)).map(([v, [t]]) => <option key={v} value={v}>{t}</option>)}
-            <option value="encerradas">Encerradas (finalizadas / com códigos)</option>
+            <option value="encerradas">Já resolvidas (códigos criados / finalizadas)</option>
           </select>
-          <select className="b-input" aria-label="Sugestão" value={filtros.sugestao} onChange={(e) => setFiltros({ ...filtros, sugestao: e.target.value })}>
-            <option value="">Qualquer leitura</option>
-            <option value="automatica">Pequena e limpa</option>
-            <option value="analise">Precisa de análise</option>
-          </select>
+          {!naTarefas && (
+            <select className="b-input" aria-label="Alertas" value={filtros.sugestao} onChange={(e) => setFiltros({ ...filtros, sugestao: e.target.value })}>
+              <option value="">Com ou sem alertas</option>
+              <option value="automatica">Só sem alertas</option>
+              <option value="analise">Só com alertas</option>
+            </select>
+          )}
         </div>
       </section>
 
@@ -330,7 +412,7 @@ export default function Solicitacoes({ api, exibirToast }) {
         {lista === null ? (
           <div className="cad-esqueleto" aria-label="Carregando"><div className="cad-esqueleto__linha" /><div className="cad-esqueleto__linha" /><div className="cad-esqueleto__linha" /></div>
         ) : lista.length === 0 ? (
-          <p className="cad-vazio">Nenhuma solicitação por aqui ainda. Quando alguém abrir uma tarefa no formulário de cadastro, ela aparece sozinha.</p>
+          <p className="cad-vazio">{naTarefas ? 'Nenhum pedido de alteração em aberto.' : 'Nenhum pedido para revisar. Quando alguém abrir uma tarefa no formulário de cadastro, ela aparece aqui sozinha.'}</p>
         ) : (
           <ul className="cad-lista">
             {lista.map((s) => (
@@ -338,18 +420,18 @@ export default function Solicitacoes({ api, exibirToast }) {
                 <button type="button" className="cad-linha sol-card" onClick={() => abrir(s.id)} disabled={ocupado === 'abrindo'}>
                   <div className="cad-linha__corpo">
                     <strong>{s.titulo}</strong>
-                    <span>{[s.solicitante, `${s.itens} produto${Number(s.itens) === 1 ? '' : 's'}`, s.prefixo_codigo && `faixa ${s.prefixo_codigo}`, s.status_clickup && `ClickUp: ${s.status_clickup}`, quando(s.recebido_em), s.origem === 'teste' ? 'TESTE' : ''].filter(Boolean).join(' · ')}</span>
-                    {s.sugestao === 'analise' && (s.motivos || [])[0] && <em className="cad-linha__problema">{s.motivos[0]}</em>}
-                    {s.auto_motivo && <em className="cad-linha__problema">Automático: {s.auto_motivo}</em>}
+                    <span>{[s.solicitante, `${s.itens} ${naTarefas ? 'linha' : 'produto'}${Number(s.itens) === 1 ? '' : 's'}`, !naTarefas && s.prefixo_codigo && `família ${s.prefixo_codigo}`, s.status_clickup && `ClickUp: ${s.status_clickup}`, quando(s.recebido_em), s.origem === 'teste' ? 'TESTE' : ''].filter(Boolean).join(' · ')}</span>
+                    {s.sugestao === 'analise' && !naTarefas && (s.motivos || [])[0] && <em className="cad-linha__problema">{s.motivos[0]}</em>}
+                    {s.auto_motivo && <em className="cad-linha__problema">Criação automática não fez: {s.auto_motivo}</em>}
                   </div>
-                  <div className="cad-linha__lado"><Chip par={STATUS[s.status]} /> <Chip par={SUGESTAO[s.sugestao]} /></div>
+                  <div className="cad-linha__lado"><Chip par={parDoStatus(s)} /> {parDaLeitura(s) && <Chip par={parDaLeitura(s)} />}</div>
                 </button>
               </li>
             ))}
           </ul>
         )}
       </section>
-      <NcmPainel api={api} exibirToast={exibirToast} />
+      {!naTarefas && <NcmPainel api={api} exibirToast={exibirToast} />}
     </div>
   );
 }

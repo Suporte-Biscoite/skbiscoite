@@ -133,6 +133,14 @@ export function lerTarefaClickUp(tarefa) {
   };
 }
 
+// Pedido de ALTERAÇÃO (renomear, ativar/inativar códigos...) não é produto novo: vai para a área "Outras tarefas".
+// Olha o título e a primeira linha da descrição ("Alteração de nome Mães 2027", "Ativar códigos da linha X").
+const PEDIDO_DE_ALTERACAO = /\b(altera[cç][aã]o|alterar|altere|renomear|renomea[cç][aã]o|mudan[cç]a de nome|mudar (o )?nome|troca de nome|trocar (o )?nome|corre[cç][aã]o de nome|corrigir (o )?nome|ajuste de nome|ajustar (o )?nome|atualiza[cç][aã]o de nome|atualizar (o )?nome|reativar|reativa[cç][aã]o|ativar|ativa[cç][aã]o|inativar|inativa[cç][aã]o|desativar|desativa[cç][aã]o)\b/i;
+export function ehPedidoDeAlteracao(titulo, descricao = '') {
+  const primeiraLinha = String(descricao ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  return PEDIDO_DE_ALTERACAO.test(normalizarTexto(String(titulo ?? '')).toLowerCase()) || PEDIDO_DE_ALTERACAO.test(normalizarTexto(primeiraLinha).toLowerCase());
+}
+
 // Analisa uma tarefa já lida. `catalogo`: resultado de prepararCatalogo (pode ser []).
 // Devolve { itens, ignoradas, faixa, familiaPrefixo, prefixoCodigo, rota, sugestao, motivos }.
 //   sugestao: 'automatica' (pequena, limpa) | 'analise' (alguém do time precisa olhar)
@@ -173,6 +181,12 @@ export function analisarSolicitacao(tarefa, catalogo = [], config = CONFIG_PADRA
   if (usouTitulo) motivos.push('Sem descrição: o produto foi lido do título.');
   const repetidas = ignoradas.filter((i) => i.motivo.startsWith('repetida'));
   if (repetidas.length) motivos.push(`${repetidas.length} linha(s) repetida(s) foram juntadas em uma só.`);
+
+  // Alteração de nome / ativar códigos: não cria código novo. Os outros alertas deixam de fazer sentido.
+  if (ehPedidoDeAlteracao(tarefa.titulo, tarefa.descricao)) {
+    rota = 'alteracao';
+    motivos.splice(0, motivos.length, 'Pedido de alteração (nome, ativar ou inativar códigos): não é produto novo, por isso fica em "Outras tarefas".');
+  }
 
   return {
     itens, ignoradas, faixa, familiaPrefixo, prefixoCodigo: familiaPrefixo, rota,

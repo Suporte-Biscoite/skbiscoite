@@ -18,7 +18,7 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5'];
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT'];
 const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
@@ -249,6 +249,14 @@ try {
   s = await detalharSolicitacao(sql, a4.id); assert.ok(['na_fila', 'processando'].includes(s.status));
   ok('intervalo entre solicitações e limite por dia são respeitados (uma por rodada)');
   await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`;
+  console.log('Alteração de nome / ativar códigos ficam em "Outras tarefas"');
+  const alt = await receberTarefa(sql, tarefa('TESTE-ALT', 'Alteração de nome Mães 2027 TESTE', 'PRODUTO ANTIGO A\nPRODUTO ANTIGO B', 'INTERNO(400)'), { origem: 'teste' });
+  s = await detalharSolicitacao(sql, alt.id); assert.equal(s.rota, 'alteracao'); assert.equal(s.sugestao, 'analise');
+  assert.ok((await listarSolicitacoes(sql, { tipo: 'tarefas', busca: 'Mães 2027 TESTE' })).some((x) => x.id === alt.id));
+  assert.ok(!(await listarSolicitacoes(sql, { tipo: 'cadastro', busca: 'Mães 2027 TESTE' })).some((x) => x.id === alt.id));
+  await assert.rejects(() => aprovarECriar(sql, usuario, alt.id, SEM_PROCESSAR), /alteração/);
+  s = await detalharSolicitacao(sql, alt.id); assert.equal(s.lote_id, null); assert.equal(s.status, 'aguardando_analise');
+  ok('pedido de alteração vai para "Outras tarefas", não aparece em produtos novos e não pode criar código');
   console.log('\nTUDO OK');
 } catch (erro) {
   console.error(`FALHOU: ${erro.message}`);

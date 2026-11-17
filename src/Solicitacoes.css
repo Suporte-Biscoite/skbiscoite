@@ -40,3 +40,36 @@
 .sol-etapa__corpo { flex: 1; display: grid; gap: 0.15rem; font-size: 0.9rem; }
 .sol-criacao { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.4rem; }
 .sol-ncm { width: 9rem; display: inline-block; }
+
+/* UX: abas, passos, dicas */
+.sol-meta--sem-margem { margin: 0.25rem 0 0.75rem; }
+.sol-link { background: none; border: 0; padding: 0; color: var(--brand-gold); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.sol-abas { display: flex; gap: 0.4rem; margin: 0.5rem 0 0.25rem; border-bottom: 1px solid var(--border-cream, #e6dfd2); }
+.sol-aba { background: none; border: 0; border-bottom: 3px solid transparent; padding: 0.7rem 0.9rem; font: inherit; font-weight: 600; color: var(--text-mocha); cursor: pointer; min-height: 44px; }
+.sol-aba--ativa { color: var(--brand-gold); border-bottom-color: var(--brand-gold); }
+.sol-aba:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+.sol-auto { margin: 0.5rem 0 1rem; border: 1px solid var(--border-cream, #e6dfd2); border-radius: var(--radius-sm); padding: 0.6rem 0.9rem; }
+.sol-auto summary { cursor: pointer; font-weight: 500; min-height: 32px; display: flex; align-items: center; }
+.sol-auto .sol-config { margin: 0.75rem 0; }
+.sol-passos { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin: 0.75rem 0; padding: 0; }
+.sol-passo { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-mocha); opacity: 0.7; }
+.sol-passo__num { width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: #eee7da; flex: none; }
+.sol-passo--atual { opacity: 1; font-weight: 700; color: var(--text-espresso); }
+.sol-passo--atual .sol-passo__num { background: var(--brand-gold); color: #fff; }
+.sol-passo--feito { opacity: 1; }
+.sol-passo--feito .sol-passo__num { background: #dcebd2; color: #2f6b2f; }
+.sol-dica { background: #F4F0E6; border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin: 0 0 1rem; font-size: 0.92rem; }
+@media (min-width: 720px) { .sol-passos { grid-template-columns: repeat(4, 1fr); } }
+
+/* Ajuda */
+.ajuda { max-width: 860px; }
+.ajuda h3 { margin: 0 0 0.5rem; }
+.ajuda h4 { margin: 1.25rem 0 0.4rem; font-size: 1rem; }
+.ajuda p, .ajuda li { color: var(--text-espresso); line-height: 1.55; }
+.ajuda ul, .ajuda ol { margin: 0.4rem 0 0.4rem 1.3rem; }
+.ajuda-glossario { display: grid; gap: 0.6rem; margin: 0.5rem 0; }
+.ajuda-glossario div { display: flex; gap: 0.75rem; align-items: flex-start; }
+.ajuda-glossario dt { flex: none; min-width: 9rem; }
+.ajuda-glossario dd { margin: 0; }
+.ajuda details { border: 1px solid var(--border-cream, #e6dfd2); border-radius: var(--radius-sm); padding: 0.6rem 0.9rem; margin: 0.5rem 0; }
+.ajuda summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }

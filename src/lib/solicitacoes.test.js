@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analisarSolicitacao, acharParecidos, lerFaixaDoTitulo, lerLinhasDaDescricao, lerTarefaClickUp, prefixoDaFamiliaDoCampo, prepararCatalogo } from './solicitacoes.js';
+import { ehPedidoDeAlteracao, analisarSolicitacao, acharParecidos, lerFaixaDoTitulo, lerLinhasDaDescricao, lerTarefaClickUp, prefixoDaFamiliaDoCampo, prepararCatalogo } from './solicitacoes.js';
 
 // Tarefas reais do formulário (nomes de produtos; sem dados pessoais), no formato da API do ClickUp.
 const campos = (familia, ident = 'Código') => [
@@ -54,6 +54,17 @@ test('título e campo em conflito vão para análise', () => {
   assert.ok(a.motivos[0].includes('Conflito'));
   const b = analisarSolicitacao(tarefa('Cód 7000 (Mat de Escritório)', 'PAPEL HIGIENICO INTERFOLHADO CAIXA COM 6.000', 'INTERNO'));
   assert.equal(b.sugestao, 'analise');
+});
+
+test('alteração de nome e ativar códigos vão para "Outras tarefas"; produto novo não', () => {
+  for (const t of ['Alteração de nome Mães 2027', 'alteração nome produtos Natal', 'Ativar códigos da linha Páscoa', 'Inativar código 4000123', 'Renomear kit']) {
+    assert.equal(ehPedidoDeAlteracao(t), true, t);
+    assert.equal(analisarSolicitacao(tarefa(t, 'ITEM A\nITEM B', 'INTERNO(400)')).rota, 'alteracao', t);
+  }
+  assert.equal(ehPedidoDeAlteracao('Pedido', 'Alterar o nome dos produtos abaixo:\nA\nB'), true);
+  for (const t of ['GAVETEIRO ORGANIZADOR', 'CX Organizadora Dobrável Multiuso Com Polia Giratória', 'Biscoito Ativador de Fermento']) assert.equal(ehPedidoDeAlteracao(t), false, t);
+  const a = analisarSolicitacao(tarefa('Alteração de nome Mães 2027', 'X\nY', 'INTERNO(400)'));
+  assert.equal(a.sugestao, 'analise'); assert.equal(a.motivos.length, 1);
 });
 
 test('nomes sobem em MAIÚSCULAS e SEM ACENTO', () => {

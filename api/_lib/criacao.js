@@ -23,6 +23,7 @@ export function prefixoParaCriar(s) {
 export async function aprovarECriar(sql = sqlPadrao, usuario, id, opcoes = {}) {
   const [s] = await sql`SELECT * FROM solicitacoes WHERE id = ${id}`;
   if (!s) throw new Error('Solicitação não encontrada.');
+  if (s.rota === 'alteracao') throw new Error('Este pedido é uma alteração (nome, ativar códigos), não um produto novo: não cria código.');
   if (s.lote_id) return avancar(sql, usuario, id, opcoes); // já foi para a fila: só continua (nunca cria de novo)
   if (!ESTADOS_QUE_PODEM_APROVAR.includes(s.status)) throw new Error('Esta solicitação já foi decidida.');
   const prefixo = prefixoParaCriar(s);

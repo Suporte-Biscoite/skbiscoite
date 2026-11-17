@@ -166,14 +166,23 @@ export async function conferirLista(sql, { maximoPaginas = 3 } = {}) {
 }
 
 // ---------- Tela: listar, detalhar, editar, aprovar, recusar ----------
-export async function listarSolicitacoes(sql, { status = '', busca = '', sugestao = '' } = {}) {
+// tipo: 'cadastro' (produtos novos, padrão) | 'tarefas' (alteração de nome, ativar códigos...)
+export async function listarSolicitacoes(sql, { status = '', busca = '', sugestao = '', tipo = 'cadastro' } = {}) {
   const b = `%${busca.trim()}%`;
+  const tarefas = tipo === 'tarefas';
   return sql`SELECT s.id, s.clickup_task_id, s.titulo, s.url, s.status, s.sugestao, s.rota, s.motivos, s.solicitante, s.familia_campo, s.prefixo_codigo, s.origem, s.status_clickup, s.comentado_em, s.auto_motivo, s.recebido_em, s.decidido_em, s.decidido_por,
       (SELECT count(*) FROM solicitacao_itens i WHERE i.solicitacao_id = s.id AND i.incluido) AS itens
     FROM solicitacoes s
     WHERE (CASE WHEN ${status} = '' THEN s.status NOT IN ('finalizada_clickup', 'cancelada_clickup', 'concluida')
-        WHEN ${status} = 'encerradas' THEN s.status IN ('finalizada_clickup', 'cancelada_clickup', 'concluida') ELSE s.status = ${status} END) AND (${sugestao} = '' OR s.sugestao = ${sugestao}) AND (${busca.trim()} = '' OR s.titulo ILIKE ${b} OR s.solicitante ILIKE ${b})
+        WHEN ${status} = 'encerradas' THEN s.status IN ('finalizada_clickup', 'cancelada_clickup', 'concluida') ELSE s.status = ${status} END) AND (${sugestao} = '' OR s.sugestao = ${sugestao}) AND ((${tarefas} AND s.rota = 'alteracao') OR (NOT ${tarefas} AND s.rota <> 'alteracao')) AND (${busca.trim()} = '' OR s.titulo ILIKE ${b} OR s.solicitante ILIKE ${b})
     ORDER BY s.recebido_em DESC LIMIT 200`;
+}
+
+// Quantas há em aberto em cada área (para os números nas abas).
+export async function contarEmAberto(sql) {
+  const [r] = await sql`SELECT count(*) FILTER (WHERE rota <> 'alteracao')::int AS cadastro, count(*) FILTER (WHERE rota = 'alteracao')::int AS tarefas
+    FROM solicitacoes WHERE status NOT IN ('finalizada_clickup', 'cancelada_clickup', 'concluida', 'recusada')`;
+  return r;
 }
 
 export async function detalharSolicitacao(sql, id) {
