@@ -1,7 +1,7 @@
 // Regras puras (sem rede, sem banco) para ler uma tarefa do ClickUp e decidir o que fazer com ela.
 // Usadas no servidor (webhook / conferência) e testadas com tarefas reais anonimizadas.
 import { FAMILIAS, normalizarTexto } from './familias.js';
-import { LIMITE_DESCRICAO } from './regras.js';
+import { LIMITE_DESCRICAO, padronizarNome } from './regras.js';
 
 export const CONFIG_PADRAO = Object.freeze({
   modo: 'analisar', // analisar | simulacao | automatico (automatico só na Fase 2)
@@ -57,7 +57,7 @@ export function lerLinhasDaDescricao(texto) {
     if (/[;|\t]/.test(bruta) || /\s{3,}/.test(bruta.trim())) avisos.push('Pode haver mais de um produto nesta linha.');
     const codigos = lerCodigosExistentes(t);
     if (codigos.length) avisos.push(`Cita o código ${codigos.join(', ')}: pode ser um produto que já existe.`);
-    itens.push({ linha: i + 1, original: bruta.trim(), descricao: t.toUpperCase(), avisos, codigoExistente: codigos[0] ?? null });
+    itens.push({ linha: i + 1, original: bruta.trim(), descricao: padronizarNome(t), avisos, codigoExistente: codigos[0] ?? null });
   });
   return { itens, ignoradas };
 }

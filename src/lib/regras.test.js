@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validarItem, montarProdutoOmie, montarProdutoNexaas, nomeCategoriaNexaas, nomeFamiliaOmie, lerSimNao } from './regras.js';
+import { validarItem, montarProdutoOmie, montarProdutoNexaas, nomeCategoriaNexaas, nomeFamiliaOmie, lerSimNao, padronizarNome } from './regras.js';
 
 const base = { descricao: ' biscoito  de teste ', familia: 'PRODUTOS PRONTOS', ncm: '1905.90.20', entraNaLoja: 'Sim' };
 const ok = (extra = {}) => {
@@ -118,4 +118,9 @@ test('importação: bloqueia código em stand-by e trata "PRODUTO SEM FAMILIA" c
   assert.ok(planejarImportacaoOmie(p, {}).erros[0].includes('stand-by'));
   const r = planejarImportacaoOmie({ ...p, descricao: 'BOLO' }, {});
   assert.deepEqual(r.erros, []); assert.equal(r.categoriaNexaas, 'PRODUTOS PRONTOS');
+});
+
+test('validarItem: descrição em maiúsculas e sem acento', () => {
+  assert.equal(validarItem({ descricao: '  Bolo de Cenoura Açaí  ', familia: '400', ncm: '19059020', entraNaLoja: 'Sim' }).item.descricao, 'BOLO DE CENOURA ACAI');
+  assert.equal(padronizarNome('Pão   de Mel ÇÃO'), 'PAO DE MEL CAO');
 });

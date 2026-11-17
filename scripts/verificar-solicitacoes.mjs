@@ -32,7 +32,7 @@ try {
   ok('5 itens lidos, prefixo 700, sugestão "automática" (mas nada é criado: status aguardando análise)');
   await editarItens(sql, usuario, r1.id, { itens: s.itens.map((i, k) => (k === 0 ? { ...i, descricao: 'produto fictício alfa editado' } : i)) });
   s = await detalharSolicitacao(sql, r1.id);
-  assert.equal(s.itens[0].descricao, 'PRODUTO FICTÍCIO ALFA EDITADO'); assert.equal(s.editado, true);
+  assert.equal(s.itens[0].descricao, 'PRODUTO FICTICIO ALFA EDITADO'); assert.equal(s.editado, true);
   ok('item editado na prévia');
 
   console.log('Critério 2: mais de 10 itens -> fila de análise, nada criado');

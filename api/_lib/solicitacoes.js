@@ -6,6 +6,7 @@ import { lerEstado, gravarEstado } from './catalogo.js';
 import { CONFIG_PADRAO, analisarSolicitacao, lerTarefaClickUp, prepararCatalogo } from '../../src/lib/solicitacoes.js';
 import { obterFamiliaPorPrefixo } from '../../src/lib/familias.js';
 import { lerNcmPadrao } from './ncm.js';
+import { padronizarNome } from '../../src/lib/regras.js';
 import { buscarTarefa, comentarTarefa, listarComentarios, listasMonitoradas, listarTarefasDaLista } from './clickup.js';
 
 // ---------- Configuração (guardada no banco; botão de pausa e modo) ----------
@@ -197,7 +198,7 @@ export async function editarItens(sql, usuario, id, { itens, prefixoCodigo }) {
   await sql`DELETE FROM solicitacao_itens WHERE solicitacao_id = ${id}`;
   let ordem = 0;
   for (const item of itens) {
-    const descricao = String(item.descricao ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const descricao = padronizarNome(item.descricao);
     if (!descricao) continue;
     if (descricao.length > 120) throw new Error(`"${descricao.slice(0, 30)}…" passa de 120 caracteres.`);
     ordem += 1;
@@ -277,7 +278,7 @@ export async function registrarCodigoGerado(sql, cadastro) {
   const [daFila] = await sql`SELECT 1 FROM solicitacao_itens WHERE cadastro_id = ${cadastro.id} LIMIT 1`;
   if (daFila) return { vinculado: true, completa: false };
   const [item] = await sql`SELECT i.id, i.solicitacao_id FROM solicitacao_itens i JOIN solicitacoes s ON s.id = i.solicitacao_id
-    WHERE upper(trim(i.descricao)) = ${String(cadastro.descricao).trim().toUpperCase()} AND i.incluido AND i.codigo_gerado IS NULL
+    WHERE upper(trim(i.descricao)) = ${padronizarNome(cadastro.descricao)} AND i.incluido AND i.codigo_gerado IS NULL
       AND s.lote_id IS NULL AND s.status IN ('recebida', 'aguardando_analise', 'aprovada') ORDER BY s.recebido_em LIMIT 1`;
   if (!item) return { vinculado: false };
   await sql`UPDATE solicitacao_itens SET codigo_gerado = ${cadastro.codigo}, cadastro_id = ${cadastro.id}, status = 'codigo_gerado' WHERE id = ${item.id}`;
