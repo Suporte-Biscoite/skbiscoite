@@ -88,6 +88,13 @@ export function garantirEsquema(sql = sqlPadrao) {
       atualizado_em timestamptz NOT NULL DEFAULT now())`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentado_em timestamptz`;
     await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS encerrada_em timestamptz`;
+    // Criação a partir da aprovação: fila (lote), etapas e erros de cada etapa.
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS lote_id uuid`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS na_fila_em timestamptz`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS codigos_em timestamptz`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS comentario_erro text`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS status_atualizado_em timestamptz`;
+    await sql`ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS status_erro text`
     await sql`CREATE INDEX IF NOT EXISTS solicitacoes_status_idx ON solicitacoes (status, recebido_em DESC)`;
     await sql`CREATE TABLE IF NOT EXISTS solicitacao_itens (
       id bigserial PRIMARY KEY,
@@ -103,6 +110,8 @@ export function garantirEsquema(sql = sqlPadrao) {
       codigo_gerado text,
       cadastro_id bigint,
       status text NOT NULL DEFAULT 'lido')`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS ncm text`;
+    await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS entra_na_loja boolean`;
     await sql`CREATE INDEX IF NOT EXISTS solicitacao_itens_sol_idx ON solicitacao_itens (solicitacao_id, ordem)`;
     // Cada evento do webhook entra uma vez só: a chave única é o que impede reprocessar o mesmo evento.
     await sql`CREATE TABLE IF NOT EXISTS clickup_eventos (

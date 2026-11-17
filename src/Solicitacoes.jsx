@@ -6,7 +6,8 @@ const STATUS = {
   recebida: ['Recebida', 'espera'],
   aguardando_analise: ['Aguardando análise', 'andando'],
   aprovada: ['Aprovada', 'ok'],
-  processando: ['Processando', 'andando'],
+  na_fila: ['Na fila', 'espera'],
+  processando: ['Criando', 'andando'],
   concluida: ['Códigos gerados', 'ok'],
   finalizada_clickup: ['Finalizada no ClickUp', 'ok'],
   cancelada_clickup: ['Cancelada no ClickUp', 'erro'],
@@ -16,6 +17,11 @@ const STATUS = {
 const SUGESTAO = { automatica: ['Pequena e limpa', 'ok'], analise: ['Precisa de análise', 'andando'] };
 const quando = (d) => (d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 const editavel = (s) => ['recebida', 'aguardando_analise'].includes(s.status);
+// Pode preencher NCM/loja e criar: em análise, ou aprovada que ainda não foi para a fila (nada criado).
+const podeCriarAgora = (s) => editavel(s) || (s.status === 'aprovada' && !s.lote_id);
+const ICONE = { ok: '✓', andando: '…', erro: '!', pendente: '○', desligado: '–' };
+const PREFIXOS_LOJA = ['300', '400']; // mesma regra do cadastro: só 300/400 entram na loja
+const comPadroes = (lista, prefixo) => lista.map((i) => ({ ...i, ncm: i.ncm ?? '', entra_na_loja: i.entra_na_loja ?? PREFIXOS_LOJA.includes(String(prefixo)) }));
 
 function Chip({ par }) {
   const [texto, tom] = par || ['—', 'espera'];
@@ -63,7 +69,7 @@ export default function Solicitacoes({ api, exibirToast }) {
     setOcupado('abrindo');
     try {
       const d = await api(`/api/solicitacoes?id=${id}`);
-      setAberta(d); setItens(d.itens); setFaixa(d.prefixo_codigo || ''); setRecusando(false); setMotivo('');
+      setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); setFaixa(d.prefixo_codigo || ''); setRecusando(false); setMotivo('');
     } catch (e) { exibirToast(e.message, 'erro'); } finally { setOcupado(''); }
   };
   const fechar = () => { setAberta(null); carregar(); };
@@ -79,14 +85,22 @@ export default function Solicitacoes({ api, exibirToast }) {
 
   const salvar = async () => {
     const d = await acao('editar', { itens, prefixoCodigo: faixa || undefined }, 'Itens salvos.');
-    if (d) { setAberta(d); setItens(d.itens); }
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
   };
   // Aprovar usa o que está na tela: se houve mudança, salva antes (assim o que foi aprovado é o que o time viu).
   const aprovar = async () => {
-    const mudou = faixa !== (aberta.prefixo_codigo || '') || JSON.stringify(itens.map((i) => [i.descricao, i.incluido !== false])) !== JSON.stringify(aberta.itens.map((i) => [i.descricao, i.incluido !== false]));
-    if (mudou) { const salvo = await acao('editar', { itens, prefixoCodigo: faixa || undefined }); if (!salvo) return; }
-    const d = await acao('aprovar', {}, 'Aprovada. Nesta fase nada é criado no Omie.');
-    if (d) { setAberta(d); setItens(d.itens); }
+    const validos = itens.filter((i) => i.incluido !== false && i.descricao.trim());
+    const sem = validos.filter((i) => String(i.ncm || '').replace(/\D/g, '').length !== 8).length;
+    if (sem) { exibirToast(sem === 1 ? 'Falta o NCM (8 números) de 1 produto.' : 'Faltam os NCMs (8 números) de ' + sem + ' produtos.', 'erro'); return; }
+    if (!window.confirm('Aprovar vai CRIAR ' + validos.length + ' produto(s) no Omie e no Nexaas e comentar os códigos na tarefa do ClickUp. Continuar?')) return;
+    const salvo = await acao('editar', { itens, prefixoCodigo: faixa || undefined });
+    if (!salvo) return;
+    const d = await acao('aprovar', {}, 'Aprovada: criando os códigos.');
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+  };
+  const tentarDeNovo = async (etapa) => {
+    const d = await acao('tentar-de-novo', { etapa }, 'Tentando de novo.');
+    if (d) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
   };
   const recusar = async () => {
     const d = await acao('recusar', { motivo }, 'Solicitação recusada.');
@@ -104,11 +118,27 @@ export default function Solicitacoes({ api, exibirToast }) {
     try { setConfig({ ...config, ...(await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'config', ...mudanca } })) }); } catch (e) { exibirToast(e.message, 'erro'); }
   };
 
+  // Enquanto estiver na fila / criando e sem erro, continua a criação de poucos em poucos segundos.
+  const idAberta = aberta?.id;
+  const emAndamento = !!aberta && ['na_fila', 'processando'].includes(aberta.status) && !(aberta.etapas || []).some((e) => e.estado === 'erro');
+  useEffect(() => {
+    if (!emAndamento) return undefined;
+    let parou = false;
+    const t = setTimeout(async () => {
+      try {
+        const d = await api('/api/solicitacoes', { metodo: 'POST', corpo: { acao: 'avancar', id: idAberta } });
+        if (!parou && vivo.current) { setAberta(d); setItens(comPadroes(d.itens, d.prefixo_codigo)); }
+      } catch (e) { if (!parou && vivo.current) exibirToast(e.message, 'erro'); }
+    }, 1500);
+    return () => { parou = true; clearTimeout(t); };
+  }, [emAndamento, idAberta, aberta, api, exibirToast]);
+
   const mudarItem = (idx, mudanca) => setItens((l) => l.map((i, k) => (k === idx ? { ...i, ...mudanca } : i)));
 
   // ---------- Detalhe ----------
   if (aberta) {
     const podeEditar = editavel(aberta);
+    const podeCriar = podeCriarAgora(aberta);
     const incluidos = itens.filter((i) => i.incluido !== false && i.descricao.trim()).length;
     return (
       <div className="cad sol">
@@ -154,6 +184,12 @@ export default function Solicitacoes({ api, exibirToast }) {
                     ) : <strong>{i.descricao}</strong>}
                     {(i.avisos || []).map((a) => <em key={a} className="cad-linha__problema">{a}</em>)}
                     {i.codigo_gerado && <span>Código: <strong>{i.codigo_gerado}</strong></span>}
+                    {podeCriar && (
+                      <div className="sol-criacao">
+                        <label>NCM <input className="b-input sol-ncm" inputMode="numeric" maxLength={10} value={i.ncm ?? ''} placeholder="8 números" aria-label={'NCM do produto ' + (k + 1)} onChange={(e) => mudarItem(k, { ncm: e.target.value.replace(/[^\d.]/g, '') })} /></label>
+                        <label className="sol-incluir"><input type="checkbox" checked={!!i.entra_na_loja} onChange={(e) => mudarItem(k, { entra_na_loja: e.target.checked })} /> Entra na loja (PDV)</label>
+                      </div>
+                    )}
                   </div>
                   {podeEditar && (
                     <div className="cad-linha__lado">
@@ -166,7 +202,7 @@ export default function Solicitacoes({ api, exibirToast }) {
             </ul>
           )}
 
-          {podeEditar && (
+          {podeCriar && (
             <>
               {recusando ? (
                 <div className="sol-recusa fade-in">
@@ -179,18 +215,38 @@ export default function Solicitacoes({ api, exibirToast }) {
                 </div>
               ) : (
                 <div className="cad-rodape sol-botoes">
-                  <span>{config?.modo === 'automatico' ? '' : 'Modo só analisar: aprovar não cria código no Omie.'}</span>
+                  <span>Aprovar autoriza a criação deste pedido no Omie e no Nexaas (o código sai em sequência na família {faixa || aberta.prefixo_codigo}). O modo "Só analisar" e a pausa travam apenas a criação automática.</span>
                   <div className="sol-botoes">
                     <button type="button" className="b-btn-outline cad-mini" onClick={reanalisar} disabled={!!ocupado}>Ler de novo</button>
                     <button type="button" className="b-btn-outline cad-mini" onClick={salvar} disabled={!!ocupado}>Salvar edição</button>
-                    <button type="button" className="b-btn-outline cad-mini" onClick={() => setRecusando(true)} disabled={!!ocupado}>Recusar</button>
-                    <button type="button" className="b-btn" onClick={aprovar} disabled={!!ocupado || incluidos === 0}>Aprovar</button>
+                    {podeEditar && <button type="button" className="b-btn-outline cad-mini" onClick={() => setRecusando(true)} disabled={!!ocupado}>Recusar</button>}
+                    <button type="button" className="b-btn" onClick={aprovar} disabled={!!ocupado || incluidos === 0}>{ocupado === 'aprovar' || ocupado === 'editar' ? 'Criando…' : 'Aprovar e criar códigos'}</button>
                   </div>
                 </div>
               )}
             </>
           )}
         </section>
+
+        {aberta.lote_id && (
+          <section className="b-card cad-secao fade-in" aria-labelledby="sol-etapas">
+            <h3 id="sol-etapas" className="brand-font">Andamento</h3>
+            <ol className="sol-etapas">
+              {(aberta.etapas || []).map((e) => (
+                <li key={e.chave} className={'sol-etapa sol-etapa--' + e.estado}>
+                  <span className="sol-etapa__icone" aria-hidden="true">{ICONE[e.estado]}</span>
+                  <div className="sol-etapa__corpo">
+                    <strong>{e.rotulo}</strong>
+                    <span>{e.estado === 'ok' ? quando(e.quando) : e.estado === 'andando' ? 'Em andamento…' : e.estado === 'desligado' ? 'Desligado' : e.estado === 'erro' ? 'Falhou' : 'Aguardando'}</span>
+                    {e.erro && <em className="cad-linha__problema">{e.erro}</em>}
+                  </div>
+                  {e.estado === 'erro' && <button type="button" className="b-btn-outline cad-mini" onClick={() => tentarDeNovo(e.chave)} disabled={!!ocupado}>Tentar de novo</button>}
+                </li>
+              ))}
+            </ol>
+            {(aberta.itens || []).some((i) => i.codigo_gerado) && <p className="sol-meta">Códigos: {aberta.itens.filter((i) => i.codigo_gerado).map((i) => i.codigo_gerado + ' - ' + i.descricao).join(' · ')}</p>}
+          </section>
+        )}
 
         {(aberta.historico || []).length > 0 && (
           <section className="b-card cad-secao fade-in">

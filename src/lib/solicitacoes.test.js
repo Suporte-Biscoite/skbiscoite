@@ -28,7 +28,8 @@ test('critério 1: 5 produtos na descrição viram 5 itens lidos', () => {
   const a = analisarSolicitacao(tarefa('Cód 7000 (mat de escritório)', OITO.split('\n').slice(0, 5).join('\n')));
   assert.equal(a.itens.length, 5);
   assert.deepEqual(a.itens.map((i) => i.descricao).slice(0, 3), ['BACTER PEROXY FOOD GL 5 LTS', 'GRILL MAX GL 5 LTS', 'MELANGE -19 CX/3 RF 500ML']);
-  assert.equal(a.prefixoCodigo, '7000');
+  assert.equal(a.faixa, '7000'); // o título cita 7000 (é a família 700); o código nasce do prefixo 700
+  assert.equal(a.prefixoCodigo, '700');
   assert.equal(a.sugestao, 'automatica');
   assert.deepEqual(a.motivos, []);
 });
@@ -55,8 +56,17 @@ test('título e campo em conflito vão para análise', () => {
   assert.equal(b.sugestao, 'analise');
 });
 
-test('SUPRIMENTOS sem faixa no título pede análise; outras famílias seguem', () => {
-  assert.equal(analisarSolicitacao(tarefa('Pedido de cadastro', 'LUVA DE LATEX M', 'SUPRIMENTOS')).sugestao, 'analise');
+test('SUPRIMENTOS(700) sem faixa no título NÃO pede análise: o código nasce do prefixo 700, em sequência', () => {
+  for (const fam of ['SUPRIMENTOS', 'SUPRIMENTOS(700)']) {
+    const a = analisarSolicitacao(tarefa('Gaveteiro Organizador', 'GAVETEIRO ORGANIZADOR PLÁSTICO', fam));
+    assert.equal(a.sugestao, 'automatica', fam);
+    assert.deepEqual(a.motivos, []);
+    assert.equal(a.prefixoCodigo, '700');
+  }
+  // os 3 casos reais da lista (1 produto, título que é o nome do produto, descrição preenchida)
+  for (const [t, d] of [['Kit Banco Alto Dobrável Com Assento Estofado ', 'KIT BANCO ALTO DOBRÁVEL COM ASSENTO ESTOFADO'], ['CX Organizadora Dobrável Multiuso Com Polia Giratória', 'CX ORGANIZADORA DOBRÁVEL MULTIUSO COM POLIA GIRATÓRIA']]) {
+    assert.equal(analisarSolicitacao(tarefa(t, d, 'SUPRIMENTOS(700)')).sugestao, 'automatica', t);
+  }
   assert.equal(analisarSolicitacao(tarefa('Pedido de cadastro', 'CAIXA DE PAPELAO 30X20', 'EMBALAGEM')).sugestao, 'automatica');
 });
 
@@ -109,7 +119,31 @@ test('formato real da API de lista: campos vazios e repetidos não atrapalham', 
   assert.equal(t.familiaCampo, 'SUPRIMENTOS');
   assert.equal(t.tipoIdentificacao, 'Código');
   assert.equal(t.ehCadastro, true);
-  assert.equal(analisarSolicitacao(t).prefixoCodigo, '7000');
+  assert.equal(analisarSolicitacao(t).prefixoCodigo, '700');
+});
+
+test('dois campos "Família de Produto": usa o preenchido; só avisa se os dois divergem', () => {
+  const vazio = { id: 'A', name: 'Família de Produto', type: 'drop_down', value: undefined, type_config: { options: [{ name: 'INTERNO(400)', orderindex: 0 }, { name: 'EXTERNO(300)', orderindex: 1 }, { name: 'SUPRIMENTOS(700)', orderindex: 2 }] } };
+  const cheio = (valor, id = 'B') => ({ ...vazio, id, value: valor });
+  const tipo = { id: 'T', name: 'Tipo de Identificação', type: 'drop_down', value: 0, type_config: { options: [{ name: 'Código', orderindex: 0 }] } };
+  const base = { id: '1', name: 'TESTE', text_content: 'PRODUTO TESTE010', status: { status: 'novo' } };
+  const um = lerTarefaClickUp({ ...base, custom_fields: [vazio, cheio(2), tipo] });
+  assert.equal(um.familiaCampo, 'SUPRIMENTOS(700)');
+  assert.deepEqual(um.familiasDivergentes, []);
+  assert.equal(analisarSolicitacao(um).sugestao, 'automatica');
+  const iguais = lerTarefaClickUp({ ...base, custom_fields: [cheio(2, 'B'), cheio(2, 'C'), tipo] });
+  assert.deepEqual(iguais.familiasDivergentes, []);
+  const dif = lerTarefaClickUp({ ...base, custom_fields: [cheio(0, 'B'), cheio(2, 'C'), tipo] });
+  assert.equal(dif.familiasDivergentes.length, 2);
+  assert.ok(analisarSolicitacao(dif).motivos.some((m) => m.includes('Dois campos')));
+});
+
+test('regras de alerta que continuam valendo (nada de falso positivo novo)', () => {
+  const rodar = (...a) => analisarSolicitacao(tarefa(...a));
+  assert.ok(rodar('x', 'ITEM A', 'ATIVO(800)', { campos: undefined }).motivos.length === 0);
+  assert.ok(rodar('x', '', 'SUPRIMENTOS(700)').motivos.some((m) => m.includes('Nenhum produto') || m.includes('título')));
+  assert.ok(rodar('Cód 400 (x)', 'ITEM A', 'EXTERNO(300)').motivos.some((m) => m.startsWith('Conflito')));
+  assert.equal(rodar('x', 'Produtos:\nITEM A\nITEM B', 'ATIVO').sugestao, 'automatica'); // cabeçalho ignorado não alerta
 });
 
 test('tarefa de marketing com campos definidos mas vazios não é cadastro', () => {

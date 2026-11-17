@@ -28,3 +28,15 @@
   .sol-filtros { grid-template-columns: 2fr 1fr 1fr; }
   .sol-card { flex-direction: row; align-items: center; }
 }
+
+/* Andamento da criação */
+.sol-etapas { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.5rem; }
+.sol-etapa { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.6rem 0.75rem; border: 1px solid var(--borda, #e6dfd2); border-radius: 10px; }
+.sol-etapa__icone { width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: #eee7da; flex: none; }
+.sol-etapa--ok .sol-etapa__icone { background: #dcebd2; color: #2f6b2f; }
+.sol-etapa--erro { border-color: #d98a8a; }
+.sol-etapa--erro .sol-etapa__icone { background: #f6d4d4; color: #a02020; }
+.sol-etapa--andando .sol-etapa__icone { background: #f6e8c4; }
+.sol-etapa__corpo { flex: 1; display: grid; gap: 0.15rem; font-size: 0.9rem; }
+.sol-criacao { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.4rem; }
+.sol-ncm { width: 9rem; display: inline-block; }
