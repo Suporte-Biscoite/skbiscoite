@@ -3,6 +3,7 @@ import Cadastro from './Cadastro.jsx';
 import Importar from './Importar.jsx';
 import Solicitacoes from './Solicitacoes.jsx';
 import Ajuda from './Ajuda.jsx';
+import Hoje from './Hoje.jsx';
 import './App.css';
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
@@ -344,6 +345,11 @@ function App() {
         </div>
         
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '2rem' }}>
+          {ehTI && (
+            <button onClick={() => setModo('hoje')} aria-current={modo === 'hoje' ? 'page' : undefined} style={{ background: modo === 'hoje' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'hoje' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'hoje' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+              Início
+            </button>
+          )}
           <button onClick={() => setModo('individual')} style={{ background: modo === 'individual' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'individual' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'individual' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
             Gerador Individual
           </button>
@@ -386,6 +392,7 @@ function App() {
         <header className="top-header">
           <div>
             <h1 className="brand-font">
+              {modo === 'hoje' && 'Início'}
               {modo === 'individual' && 'Novo SKU'}
               {modo === 'massa' && 'Importação em Lote'}
               {modo === 'importar' && 'Importar do Omie'}
@@ -395,6 +402,7 @@ function App() {
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
             <p>{{
+              hoje: 'O que precisa de você agora e como está o robô.',
               individual: 'Crie o código de um produto no Omie e no Nexaas.',
               massa: 'Crie vários códigos de uma vez a partir de uma planilha.',
               importar: 'Leve para o Nexaas produtos que já existem no Omie.',
@@ -414,6 +422,7 @@ function App() {
           </div>
         </header>
 
+        {modo === 'hoje' && ehTI && <Hoje api={api} irPara={setModo} />}
         {modo === 'importar' && <Importar api={api} exibirToast={exibirToast} />}
         {modo === 'solicitacoes' && ehTI && <Solicitacoes api={api} exibirToast={exibirToast} aoAbrirAjuda={() => setModo('ajuda')} />}
         {modo === 'ajuda' && <Ajuda ehTI={ehTI} />}

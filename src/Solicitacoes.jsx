@@ -1,3 +1,4 @@
+import { explicarErro } from './lib/erros.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './Cadastro.css';
 import './Solicitacoes.css';
@@ -398,7 +399,7 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
                   <div className="sol-etapa__corpo">
                     <strong>{e.rotulo}</strong>
                     <span>{e.estado === 'ok' ? quando(e.quando) : e.estado === 'andando' ? 'Em andamento…' : e.estado === 'desligado' ? 'Desligado' : e.estado === 'erro' ? 'Falhou' : 'Aguardando'}</span>
-                    {e.erro && <em className="cad-linha__problema">{e.erro}</em>}
+                    {e.erro && (() => { const x = explicarErro(e.erro); return (<em className="cad-linha__problema">{x.oQue} {x.oQueFazer}<details><summary>Detalhe técnico</summary>{x.detalhe}</details></em>); })()}
                   </div>
                   {e.estado === 'erro' && <button type="button" className="b-btn-outline cad-mini" onClick={() => tentarDeNovo(e.chave)} disabled={!!ocupado}>Tentar de novo</button>}
                 </li>
