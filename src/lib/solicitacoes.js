@@ -197,7 +197,10 @@ export function analisarSolicitacao(tarefa, catalogo = [], config = CONFIG_PADRA
   if (itens.length > config.limiteItensAuto) motivos.push(`${itens.length} itens (o automático vai até ${config.limiteItensAuto}).`);
   if (itens.some((i) => i.codigoExistente)) { rota = 'importar'; motivos.push('Cita código que já existe no Omie: provavelmente é para levar ao Nexaas (aba Importar do Omie), não criar código novo.'); }
   if (todosAvisos.length) motivos.push('Linhas com problema de leitura (veja os avisos).');
-  if (itens.some((i) => i.parecidos.length)) motivos.push('Há produto igual ou parecido já cadastrado no Omie.');
+  // Caso seguro (o robô pode tratar): o produto é IDÊNTICO a um único cadastro com o código certo da família. Não cria nada no Omie.
+  // Qualquer outra coisa (parecido, outra família, código fora do padrão, mais de um igual) continua para uma pessoa.
+  const identicoSeguro = (i) => i.parecidos.filter((p) => p.igual).length === 1 && i.parecidos.find((p) => p.igual).situacao === 'correto';
+  if (itens.some((i) => i.parecidos.length && !identicoSeguro(i))) motivos.push('Há produto igual ou parecido já cadastrado no Omie.');
   if (usouTitulo) motivos.push('Sem descrição: o produto foi lido do título.');
   const repetidas = ignoradas.filter((i) => i.motivo.startsWith('repetida'));
   if (repetidas.length) motivos.push(`${repetidas.length} linha(s) repetida(s) foram juntadas em uma só.`);

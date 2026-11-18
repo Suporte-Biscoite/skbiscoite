@@ -117,12 +117,27 @@ test('sem descrição usa o título; sem nada, análise', () => {
   assert.equal(analisarSolicitacao(tarefa('Cód 7000 (x)', '')).itens.length, 0);
 });
 
-test('produto igual ou parecido no Omie bloqueia o automático', () => {
+test('produto idêntico com código certo é caso seguro; parecido ou código errado ainda bloqueia o automático', () => {
+  const seguro = prepararCatalogo([{ codigo: '7000500', descricao: 'NEUTRE CX/3 RF 500ML' }, { codigo: '7000999', descricao: 'NEUTRE CX/3 RF 1L PLUS' }]);
+  const ok = analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), seguro);
+  assert.equal(ok.sugestao, 'automatica'); assert.deepEqual(ok.motivos, []);
+  assert.ok(ok.itens[0].avisos.some((a) => a.includes('reaproveitado'))); // o aviso informativo continua na tela
+  const duplo = prepararCatalogo([{ codigo: '7000500', descricao: 'NEUTRE CX/3 RF 500ML' }, { codigo: '7000501', descricao: 'NEUTRE CX/3 RF 500ML' }]);
+  assert.equal(analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), duplo).sugestao, 'analise');
+  const outraFamilia = prepararCatalogo([{ codigo: '4000500', descricao: 'NEUTRE CX/3 RF 500ML' }]);
+  assert.equal(analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), outraFamilia).sugestao, 'analise');
+  const foraDaFaixa = prepararCatalogo([{ codigo: '10360', descricao: 'NEUTRE CX/3 RF 500ML' }]);
+  assert.equal(analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), foraDaFaixa).sugestao, 'analise');
+  const parecido = prepararCatalogo([{ codigo: '7000500', descricao: 'NEUTRE CX/3 RF 500ML EXTRA' }]);
+  assert.equal(analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), parecido).sugestao, 'analise');
+});
+
+test('produto idêntico no Omie: aviso informativo com o código existente', () => {
   const cat = prepararCatalogo([{ codigo: '7000500', descricao: 'NEUTRE CX/3 RF 500ML' }, { codigo: '7000501', descricao: 'CAFE EM PO 500G' }]);
   assert.equal(acharParecidos('neutre cx/3 rf 500ml', cat)[0].similaridade, 1);
   assert.equal(acharParecidos('NEUTRE CX/3 RF 1L', cat).length, 0); // 3 de 5 palavras: abaixo de 0,8
   const a = analisarSolicitacao(tarefa('Cód 7000 (x)', 'NEUTRE CX/3 RF 500ML'), cat);
-  assert.equal(a.sugestao, 'analise');
+  assert.equal(a.sugestao, 'automatica'); // idêntico com código certo: o robô só reaproveita
   assert.ok(a.itens[0].avisos[0].includes('7000500'));
 });
 
