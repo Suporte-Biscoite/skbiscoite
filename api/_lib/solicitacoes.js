@@ -203,6 +203,33 @@ export async function contarEmAberto(sql) {
   return r;
 }
 
+// Busca única: pedidos (título, solicitante, produto, código criado) e produtos do catálogo do Omie (código ou nome).
+export async function buscaGlobal(sql, termo) {
+  const q = String(termo ?? '').trim().slice(0, 80);
+  if (q.length < 2) return { pedidos: [], produtos: [] };
+  const like = '%' + q.replace(/[%_\\]/g, (c) => '\\' + c) + '%';
+  const pedidos = await sql`SELECT DISTINCT s.id, s.titulo, s.status, s.solicitante, s.recebido_em FROM solicitacoes s LEFT JOIN solicitacao_itens i ON i.solicitacao_id = s.id
+    WHERE s.titulo ILIKE ${like} OR s.solicitante ILIKE ${like} OR i.descricao ILIKE ${like} OR i.codigo_gerado = ${q} ORDER BY s.recebido_em DESC LIMIT 8`;
+  const produtos = await sql`SELECT codigo, descricao, inativo FROM omie_produtos WHERE codigo = ${q} OR descricao ILIKE ${like} ORDER BY inativo, codigo LIMIT 8`;
+  return { pedidos, produtos };
+}
+
+// Tela "Início": o que espera uma pessoa, o que deu problema e como está o robô.
+export async function resumoDeHoje(sql) {
+  const [r] = await sql`SELECT
+    count(*) FILTER (WHERE rota <> 'alteracao' AND status = 'aguardando_analise')::int AS aguardando,
+    count(*) FILTER (WHERE rota <> 'alteracao' AND status IN ('na_fila', 'processando') AND (status_erro IS NOT NULL OR comentario_erro IS NOT NULL OR EXISTS (SELECT 1 FROM cadastros c WHERE c.lote_id = solicitacoes.lote_id AND (c.omie_erro IS NOT NULL OR c.nexaas_erro IS NOT NULL))))::int AS com_problema,
+    count(*) FILTER (WHERE status = 'concluida' AND atualizado_em::date = current_date)::int AS concluidas_hoje,
+    count(*) FILTER (WHERE rota = 'alteracao' AND status NOT IN ('finalizada_clickup', 'cancelada_clickup', 'concluida', 'recusada'))::int AS tarefas
+    FROM solicitacoes`;
+  const [{ robo_hoje }] = await sql`SELECT count(*)::int AS robo_hoje FROM solicitacoes WHERE decidido_por = 'automatico@skbiscoite' AND decidido_em::date = current_date`;
+  const proximas = await sql`SELECT id, titulo, sugestao, solicitante FROM solicitacoes WHERE rota <> 'alteracao' AND status = 'aguardando_analise' ORDER BY recebido_em LIMIT 5`;
+  const problemas = await sql`SELECT id, titulo, COALESCE(status_erro, comentario_erro) AS erro FROM solicitacoes WHERE rota <> 'alteracao' AND status IN ('na_fila', 'processando') AND (status_erro IS NOT NULL OR comentario_erro IS NOT NULL) ORDER BY atualizado_em DESC LIMIT 5`;
+  const config = await lerConfig(sql);
+  const ultima = (await lerEstado(sql, 'auto_ultima_criacao'))?.em ?? null;
+  return { ...r, robo: { modo: config.modo, pausado: config.pausado, criadasHoje: robo_hoje, limiteDia: config.limiteAutoPorDia, intervaloMinutos: config.intervaloMinutos, ultimaCriacao: ultima ? new Date(ultima).toISOString() : null }, proximas, problemas };
+}
+
 export async function detalharSolicitacao(sql, id) {
   const [s] = await sql`SELECT * FROM solicitacoes WHERE id = ${id}`;
   if (!s) return null;

@@ -128,7 +128,7 @@ export async function atualizarStatusDaTarefa(sql, id, { atualizarStatus = atual
     await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', 'status-atualizado', ${JSON.stringify({ status })}::jsonb)`;
     return { atualizado: true };
   } catch (erro) {
-    const msg = String(erro.message).slice(0, 300);
+    const msg = String(erro.message).replace(/sk-[A-Za-z0-9_-]{20,}/g, '[chave oculta]').slice(0, 300);
     await sql`UPDATE solicitacoes SET status_atualizado_em = NULL, status_erro = ${msg} WHERE id = ${id}`;
     await sql`INSERT INTO solicitacoes_log (solicitacao_id, usuario, acao, detalhe) VALUES (${id}, 'sistema', 'status-falhou', ${JSON.stringify({ erro: msg })}::jsonb)`;
     return { atualizado: false, erro: msg };

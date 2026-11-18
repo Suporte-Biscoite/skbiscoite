@@ -16,7 +16,7 @@ import { processarFilaAutomatica } from './_lib/automatico.js';
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { aplicarCorrecao, correcaoAtiva, desfazerCorrecao, listarCorrecoes, listarSuspeitos, proporCorrecao } from './_lib/correcao.js';
 import { sugerirNomesDaSolicitacao } from './_lib/nome-ia.js';
-import { conferirFamiliaDaSolicitacao, conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar } from './_lib/solicitacoes.js';
+import { conferirFamiliaDaSolicitacao, conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar, resumoDeHoje, buscaGlobal } from './_lib/solicitacoes.js';
 
 const SETORES = (process.env.SOLICITACOES_SETORES || 'TI').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 
@@ -30,6 +30,8 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       if (req.query.ncm) return res.status(200).json({ padrao: await lerNcmPadrao(sql), revisar: await listarParaRevisarNcm(sql) });
       if (req.query.correcoes) return res.status(200).json({ ativa: correcaoAtiva(), lista: await listarCorrecoes(sql), suspeitos: await listarSuspeitos(sql, { busca: String(req.query.busca || '').trim() }) });
+      if (req.query.busca_global !== undefined) return res.status(200).json(await buscaGlobal(sql, String(req.query.busca_global)));
+      if (req.query.hoje) return res.status(200).json(await resumoDeHoje(sql));
       if (req.query.contagem) return res.status(200).json(await contarEmAberto(sql));
       if (req.query.config) return res.status(200).json({ ...(await lerConfig(sql)), clickupConfigurado: clickupConfigurado() });
       if (req.query.id) {

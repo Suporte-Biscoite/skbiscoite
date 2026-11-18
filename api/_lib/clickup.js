@@ -67,7 +67,7 @@ export async function atualizarStatusTarefa(id, status) {
   const lista = tarefa.list?.id ? await chamar('GET', `/list/${tarefa.list.id}`) : null;
   const nomes = (lista?.statuses || []).map((s) => s.status);
   const exato = nomes.length ? nomes.find((n) => semAcento(n) === semAcento(status)) : String(status).trim();
-  if (!exato) throw new ErroClickUp(`A lista "${tarefa.list?.name}" não tem o status "${String(status).trim()}". Status da lista: ${nomes.join(', ')}.`, 400);
+  if (!exato) throw new ErroClickUp(`A lista "${tarefa.list?.name}" não tem o status "${String(status).trim().slice(0, 40)}". Status da lista: ${nomes.join(', ')}.`, 400);
   return chamar('PUT', `/task/${encodeURIComponent(id)}`, { status: exato });
 }
 export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURIComponent(id)}/comment`, { comment_text: texto, notify_all: false });

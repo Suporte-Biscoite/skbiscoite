@@ -78,3 +78,18 @@
 .sol-ia-nome { border-left: 3px solid var(--brand-gold); padding: 0.5rem 0.75rem; margin-top: 0.4rem; background: #FBF6E8; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; display: grid; gap: 0.3rem; }
 .sol-ia-nome a { color: var(--brand-gold); font-weight: 600; }
 .sol-correcao { display: grid; gap: 0.6rem; margin: 0.5rem 0; }
+
+/* Tela Início */
+.hoje { display: grid; gap: 1rem; }
+.hoje h4 { margin: 1rem 0 0.4rem; font-size: 0.95rem; }
+.hoje-cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.hoje-cartao { display: flex; flex-direction: column; gap: 0.2rem; text-align: left; padding: 1rem; border: 1px solid var(--borda, #e6dfd2); border-radius: 12px; background: var(--bg-vanilla, #fdfbf7); cursor: pointer; font: inherit; }
+.hoje-cartao strong { font-size: 2rem; line-height: 1; }
+.hoje-cartao:hover, .hoje-cartao:focus-visible { border-color: var(--brand-gold, #c9962f); outline: none; }
+.hoje-cartao--alerta { border-color: #d98a8a; }
+.hoje-lista { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; gap: 0.4rem; }
+.hoje-lista li { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--borda, #e6dfd2); border-radius: 10px; }
+.hoje-lista li span { font-size: 0.85rem; color: var(--text-mocha, #6b5a4a); }
+.sol-resumo { display: grid; gap: 0.5rem; margin: 0.75rem 0; padding: 0.75rem 1rem; border: 1px solid var(--borda, #e6dfd2); border-radius: 12px; background: var(--bg-vanilla, #fdfbf7); }
+.sol-resumo dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-mocha, #6b5a4a); }
+.sol-resumo dd { margin: 0; }
