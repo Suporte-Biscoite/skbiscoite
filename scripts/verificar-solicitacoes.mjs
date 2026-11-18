@@ -21,8 +21,8 @@ const campos = (familia) => [
   { id: 'b', name: 'Tipo de Identificação', type: 'drop_down', value: { name: 'Código' } },
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
-const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO', 'TESTE-NOME'];
-const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902', '99997')`; await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`; await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`; await sql`DELETE FROM sync_meta WHERE chave LIKE 'busca_web_teste%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO', 'TESTE-NOME', 'TESTE-AUTOREUSO', 'TESTE-AUTOPAREC'];
+const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902', '99997', '4009901', '4009902')`; await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`; await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`; await sql`DELETE FROM sync_meta WHERE chave LIKE 'busca_web_teste%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -316,6 +316,21 @@ try {
   assert.ok(linhaDoComentario({ codigo_gerado: '7009901', descricao: 'X', acao: 'JaCadastrado', nexaas_origem: 'criado', descricao_omie: 'PRODUTO OMIE' }).includes('já estava cadastrado no Omie; cadastrado agora no Nexaas'));
   assert.ok(linhaDoComentario({ codigo_gerado: '4000001', descricao: 'Y', acao: null }).includes('criado agora'));
   ok('nome igual com código certo é reaproveitado (Omie não é recadastrado, só o Nexaas fica na fila); código fora do padrão bloqueia tudo sem criar nada');
+  console.log('Automático com produto já cadastrado: idêntico e com código certo o robô reaproveita; parecido segue para uma pessoa');
+  {
+    await sql`INSERT INTO omie_produtos (codigo, descricao, descricao_norm, codigo_produto, inativo) VALUES ('4009901', 'PRODUTO FICTICIO AUTO REUSO', 'PRODUTO FICTICIO AUTO REUSO', 4321, false), ('4009902', 'PRODUTO FICTICIO AUTO PARECIDO EXTRA', 'PRODUTO FICTICIO AUTO PARECIDO EXTRA', 4322, false)`;
+    const misto = await receberTarefa(sql, tarefa('TESTE-AUTOREUSO', 'Pedido misto', 'PRODUTO FICTICIO AUTO REUSO\nPRODUTO FICTICIO AUTO NOVO SEIS', 'INTERNO(400)'), { origem: 'teste' });
+    const parec = await receberTarefa(sql, tarefa('TESTE-AUTOPAREC', 'Pedido parecido', 'PRODUTO FICTICIO AUTO PARECIDO', 'INTERNO(400)'), { origem: 'teste' });
+    s = await detalharSolicitacao(sql, misto.id); assert.equal(s.sugestao, 'automatica'); assert.equal((await detalharSolicitacao(sql, parec.id)).sugestao, 'analise');
+    const baseR = { ia: async () => ({ ok: true, motivo: '' }), lerNota: async () => { throw new Error('sem nota'); }, ids: [misto.id, parec.id], avancarOpcoes: SEM_PROCESSAR, chaveUltima: 'auto_ultima_criacao_teste2' };
+    const r = await processarFilaAutomatica(sql, { ...baseR, agora: Date.now() + 3600000, configExtra: config('automatico') });
+    assert.equal(r.criadas, 1);
+    const cads = await sql`SELECT codigo, acao, omie_status, nexaas_status FROM cadastros WHERE lote_id = (SELECT lote_id FROM solicitacoes WHERE id = ${misto.id}) ORDER BY id`;
+    assert.equal(cads.length, 2); assert.equal(cads.filter((c) => c.acao === 'JaCadastrado').length, 1); assert.equal(cads.find((c) => c.acao === 'JaCadastrado').codigo, '4009901');
+    assert.equal((await detalharSolicitacao(sql, parec.id)).status, 'aguardando_analise'); // parecido: fica para uma pessoa
+    await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste2'`;
+    ok('pedido misto (1 já cadastrado + 1 novo) é tratado pelo robô: reaproveita o código certo e cria só o novo; parecido não é tratado');
+  }
   console.log('Corrigir cadastro antigo (Omie SIMULADO; nada real é alterado)');
   {
     const omieSim = { descricao: 'MOINHO TESTE FORA DA FAIXA', inativo: 'N', codigo_produto: 555001, codigo: '99997', ncm: '84198190', unidade: 'UN', valor_unitario: 0 };
