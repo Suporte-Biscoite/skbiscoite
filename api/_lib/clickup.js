@@ -60,7 +60,16 @@ export async function baixarArquivo(url, maxBytes = 8 * 1024 * 1024) {
   return buffer;
 }
 export const listarComentarios = (id) => chamar('GET', `/task/${encodeURIComponent(id)}/comment`);
-export const atualizarStatusTarefa = (id, status) => chamar('PUT', `/task/${encodeURIComponent(id)}`, { status });
+const semAcento = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+// O ClickUp só aceita o nome EXATO de um status da lista da tarefa. Conferimos na lista (sem ligar para caixa, acento ou espaço sobrando).
+export async function atualizarStatusTarefa(id, status) {
+  const tarefa = await chamar('GET', `/task/${encodeURIComponent(id)}`);
+  const lista = tarefa.list?.id ? await chamar('GET', `/list/${tarefa.list.id}`) : null;
+  const nomes = (lista?.statuses || []).map((s) => s.status);
+  const exato = nomes.length ? nomes.find((n) => semAcento(n) === semAcento(status)) : String(status).trim();
+  if (!exato) throw new ErroClickUp(`A lista "${tarefa.list?.name}" não tem o status "${String(status).trim()}". Status da lista: ${nomes.join(', ')}.`, 400);
+  return chamar('PUT', `/task/${encodeURIComponent(id)}`, { status: exato });
+}
 export const comentarTarefa = (id, texto) => chamar('POST', `/task/${encodeURIComponent(id)}/comment`, { comment_text: texto, notify_all: false });
 
 // ---- Webhook ----
