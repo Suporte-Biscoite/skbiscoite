@@ -1,4 +1,5 @@
 import { explicarErro } from './lib/erros.js';
+import { montarLinhaDoTempo, resumoDoPedido } from './lib/linhaDoTempo.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './Cadastro.css';
 import './Solicitacoes.css';
@@ -236,6 +237,12 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
           </div>
           <Passos s={aberta} />
           {dica && <p className="sol-dica" role="note"><strong>O que fazer agora:</strong> {dica}</p>}
+          {!alteracao && (aberta.itens || []).length > 0 && (() => { const r = resumoDoPedido({ ...aberta, itens }); return (
+            <dl className="sol-resumo">
+              <div><dt>O que o sistema encontrou</dt><dd>{r.encontrou}</dd></div>
+              <div><dt>O que precisa de você</dt><dd>{r.precisa.join(' ')}</dd></div>
+              {podeCriar && <div><dt>Se você aprovar</dt><dd>{r.aprovar}</dd></div>}
+            </dl>); })()}
           <h3 className="brand-font sol-titulo">{aberta.titulo}</h3>
           <p className="sol-meta">
             {aberta.solicitante && <>Solicitante: <strong>{aberta.solicitante}</strong> · </>}Recebida em {quando(aberta.recebido_em)} ·{' '}
@@ -411,9 +418,9 @@ export default function Solicitacoes({ api, exibirToast, aoAbrirAjuda }) {
 
         {(aberta.historico || []).length > 0 && (
           <section className="b-card cad-secao fade-in">
-            <h3 className="brand-font">Histórico</h3>
+            <h3 className="brand-font">Linha do tempo</h3>
             <ul className="sol-historico">
-              {aberta.historico.map((h, k) => <li key={k}><strong>{h.acao}</strong> · {h.usuario} · {quando(h.em)}</li>)}
+              {montarLinhaDoTempo(aberta.historico).map((h, k) => <li key={k}><strong>{h.texto}</strong> · {h.tipo === 'robo' ? '🤖 ' : h.tipo === 'pessoa' ? '👤 ' : ''}{h.nome} · {quando(h.em)}</li>)}
             </ul>
           </section>
         )}

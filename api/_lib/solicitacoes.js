@@ -203,6 +203,17 @@ export async function contarEmAberto(sql) {
   return r;
 }
 
+// Busca única: pedidos (título, solicitante, produto, código criado) e produtos do catálogo do Omie (código ou nome).
+export async function buscaGlobal(sql, termo) {
+  const q = String(termo ?? '').trim().slice(0, 80);
+  if (q.length < 2) return { pedidos: [], produtos: [] };
+  const like = '%' + q.replace(/[%_\\]/g, (c) => '\\' + c) + '%';
+  const pedidos = await sql`SELECT DISTINCT s.id, s.titulo, s.status, s.solicitante, s.recebido_em FROM solicitacoes s LEFT JOIN solicitacao_itens i ON i.solicitacao_id = s.id
+    WHERE s.titulo ILIKE ${like} OR s.solicitante ILIKE ${like} OR i.descricao ILIKE ${like} OR i.codigo_gerado = ${q} ORDER BY s.recebido_em DESC LIMIT 8`;
+  const produtos = await sql`SELECT codigo, descricao, inativo FROM omie_produtos WHERE codigo = ${q} OR descricao ILIKE ${like} ORDER BY inativo, codigo LIMIT 8`;
+  return { pedidos, produtos };
+}
+
 // Tela "Início": o que espera uma pessoa, o que deu problema e como está o robô.
 export async function resumoDeHoje(sql) {
   const [r] = await sql`SELECT

@@ -10,6 +10,14 @@ const MODO = { analisar: 'Só analisa (uma pessoa aprova tudo)', simulacao: 'Sim
 export default function Hoje({ api, irPara }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
+  const [busca, setBusca] = useState('');
+  const [achados, setAchados] = useState(null);
+  useEffect(() => {
+    if (busca.trim().length < 2) return undefined;
+    let vivo = true;
+    const t = setTimeout(() => { api('/api/solicitacoes?busca_global=' + encodeURIComponent(busca.trim())).then((r) => vivo && setAchados(r)).catch(() => vivo && setAchados({ pedidos: [], produtos: [] })); }, 350);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [busca, api]);
   const carregar = useCallback(() => api('/api/solicitacoes?hoje=1').then((r) => { setD(r); setErro(''); }).catch((e) => setErro(e.message)), [api]);
   useEffect(() => { carregar(); const t = setInterval(carregar, 60000); return () => clearInterval(t); }, [carregar]);
 
@@ -19,6 +27,19 @@ export default function Hoje({ api, irPara }) {
   const tudoEmDia = d.aguardando === 0 && d.com_problema === 0;
   return (
     <div className="hoje fade-in">
+      <section className="b-card cad-secao" aria-labelledby="hoje-busca">
+        <h3 id="hoje-busca" className="brand-font">Buscar</h3>
+        <input className="b-input" type="search" placeholder="Código, nome do produto, solicitante ou título da tarefa" value={busca} onChange={(e) => { setBusca(e.target.value); if (e.target.value.trim().length < 2) setAchados(null); }} aria-label="Busca geral" />
+        {achados && busca.trim().length >= 2 && (
+          <div className="hoje-achados" aria-live="polite">
+            <h4>Pedidos ({achados.pedidos.length})</h4>
+            {achados.pedidos.length === 0 ? <p className="sol-meta">Nenhum pedido encontrado.</p> : <ul className="hoje-lista">{achados.pedidos.map((p) => <li key={p.id}><strong>{p.titulo}</strong><span>{p.solicitante || 'sem solicitante'} · {String(p.status).replace(/_/g, ' ')} · abra em Solicitações</span></li>)}</ul>}
+            <h4>Produtos no Omie ({achados.produtos.length})</h4>
+            {achados.produtos.length === 0 ? <p className="sol-meta">Nenhum produto encontrado.</p> : <ul className="hoje-lista">{achados.produtos.map((p) => <li key={p.codigo}><strong>{p.codigo} {p.descricao}</strong>{p.inativo && <span>Inativo</span>}</li>)}</ul>}
+          </div>
+        )}
+      </section>
+
       <section className="b-card cad-secao" aria-labelledby="hoje-agora">
         <h3 id="hoje-agora" className="brand-font">O que precisa de você agora</h3>
         {tudoEmDia ? (
