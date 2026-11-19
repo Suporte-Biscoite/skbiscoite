@@ -15,6 +15,7 @@ import { processarFilaAutomatica } from './_lib/automatico.js';
 
 import { aprovarECriar, avancar, tentarDeNovo } from './_lib/criacao.js';
 import { aplicarCorrecao, correcaoAtiva, desfazerCorrecao, listarCorrecoes, listarSuspeitos, proporCorrecao } from './_lib/correcao.js';
+import { aplicarRenomeacoes, desfazerRenomeacao, listarRenomeacoes, proporRenomeacoes, renomeacaoAtiva } from './_lib/renomear.js';
 import { sugerirNomesDaSolicitacao } from './_lib/nome-ia.js';
 import { conferirFamiliaDaSolicitacao, conferirLista, contarEmAberto, decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, reanalisar, resumoDeHoje, buscaGlobal } from './_lib/solicitacoes.js';
 
@@ -32,6 +33,7 @@ export default async function handler(req, res) {
       if (req.query.correcoes) return res.status(200).json({ ativa: correcaoAtiva(), lista: await listarCorrecoes(sql), suspeitos: await listarSuspeitos(sql, { busca: String(req.query.busca || '').trim() }) });
       if (req.query.busca_global !== undefined) return res.status(200).json(await buscaGlobal(sql, String(req.query.busca_global)));
       if (req.query.hoje) return res.status(200).json(await resumoDeHoje(sql));
+      if (req.query.renomeacoes) return res.status(200).json({ ativa: renomeacaoAtiva(), lista: await listarRenomeacoes(sql) });
       if (req.query.contagem) return res.status(200).json(await contarEmAberto(sql));
       if (req.query.config) return res.status(200).json({ ...(await lerConfig(sql)), clickupConfigurado: clickupConfigurado() });
       if (req.query.id) {
@@ -51,6 +53,10 @@ export default async function handler(req, res) {
     if (acao === 'correcao-propor') return res.status(200).json(await proporCorrecao(sql, usuario, req.body.codigo, { solicitacaoId: Number(req.body.solicitacaoId) || null }));
     if (acao === 'correcao-aplicar') return res.status(200).json(await aplicarCorrecao(sql, usuario, Number(req.body.correcaoId), { confirmouConferencia: req.body.confirmouConferencia === true }));
     if (acao === 'correcao-desfazer') return res.status(200).json(await desfazerCorrecao(sql, usuario, Number(req.body.correcaoId)));
+    // Renomear códigos (Omie primeiro, depois Nexaas): propor só lê; aplicar e desfazer exigem uma pessoa e RENOMEAR_ATIVO=1.
+    if (acao === 'renomear-propor') return res.status(200).json(await proporRenomeacoes(sql, usuario, String(req.body.texto ?? '')));
+    if (acao === 'renomear-aplicar') return res.status(200).json({ resultado: await aplicarRenomeacoes(sql, usuario, req.body.ids) });
+    if (acao === 'renomear-desfazer') return res.status(200).json(await desfazerRenomeacao(sql, usuario, Number(req.body.id)));
     if (acao === 'conferir') {
       if (!clickupConfigurado()) return res.status(409).json({ error: 'O token do ClickUp ainda não foi configurado no servidor (CLICKUP_API_TOKEN).' });
       const lista = await conferirLista(sql);

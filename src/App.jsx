@@ -4,6 +4,7 @@ import Importar from './Importar.jsx';
 import Solicitacoes from './Solicitacoes.jsx';
 import Ajuda from './Ajuda.jsx';
 import Hoje from './Hoje.jsx';
+import Renomear from './Renomear.jsx';
 import './App.css';
 
 // ================= CONEXÃO COM O BANCO (via /api, Neon) =================
@@ -370,6 +371,9 @@ function App() {
               <button onClick={() => setModo('solicitacoes')} style={{ background: modo === 'solicitacoes' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'solicitacoes' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'solicitacoes' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Solicitações
               </button>
+              <button onClick={() => setModo('renomear')} aria-current={modo === 'renomear' ? 'page' : undefined} style={{ background: modo === 'renomear' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'renomear' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'renomear' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
+                Renomear códigos
+              </button>
               <button onClick={() => setModo('historico')} style={{ background: modo === 'historico' ? 'var(--bg-vanilla)' : 'transparent', color: modo === 'historico' ? 'var(--brand-gold)' : 'var(--text-espresso)', border: modo === 'historico' ? '1px solid var(--border-cream)' : '1px solid transparent', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', textAlign: 'left', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', width: '100%' }}>
                 Histórico & Auditoria
               </button>
@@ -393,6 +397,7 @@ function App() {
           <div>
             <h1 className="brand-font">
               {modo === 'hoje' && 'Início'}
+              {modo === 'renomear' && 'Renomear códigos'}
               {modo === 'individual' && 'Novo SKU'}
               {modo === 'massa' && 'Importação em Lote'}
               {modo === 'importar' && 'Importar do Omie'}
@@ -402,6 +407,7 @@ function App() {
               {modo === 'historico' && 'Logs do Sistema'}
             </h1>
             <p>{{
+              renomear: 'Troque o nome de produtos já cadastrados, no Omie e no Nexaas.',
               hoje: 'O que precisa de você agora e como está o robô.',
               individual: 'Crie o código de um produto no Omie e no Nexaas.',
               massa: 'Crie vários códigos de uma vez a partir de uma planilha.',
@@ -422,6 +428,7 @@ function App() {
           </div>
         </header>
 
+        {modo === 'renomear' && ehTI && <Renomear api={api} exibirToast={exibirToast} />}
         {modo === 'hoje' && ehTI && <Hoje api={api} irPara={setModo} />}
         {modo === 'importar' && <Importar api={api} exibirToast={exibirToast} />}
         {modo === 'solicitacoes' && ehTI && <Solicitacoes api={api} exibirToast={exibirToast} aoAbrirAjuda={() => setModo('ajuda')} />}

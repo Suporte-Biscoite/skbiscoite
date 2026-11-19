@@ -11,6 +11,7 @@ import { lerNotaDaSolicitacao } from '../api/_lib/nota.js';
 import { conferirFamilia } from '../api/_lib/familia-ia.js';
 import { aplicarCorrecao, desfazerCorrecao, proporCorrecao } from '../api/_lib/correcao.js';
 import { sugerirNomesDaSolicitacao } from '../api/_lib/nome-ia.js';
+import { aplicarRenomeacoes, desfazerRenomeacao, proporRenomeacoes } from '../api/_lib/renomear.js';
 import { processarFilaAutomatica, ROBO } from '../api/_lib/automatico.js';
 import { decidir, detalharSolicitacao, editarItens, gravarConfig, lerConfig, listarSolicitacoes, receberTarefa, registrarCodigoGerado, tratarEvento } from '../api/_lib/solicitacoes.js';
 
@@ -22,7 +23,7 @@ const campos = (familia) => [
 ];
 const tarefa = (id, name, text, familia = 'SUPRIMENTOS') => ({ id, name, text_content: text, status: { status: 'kauã' }, custom_fields: campos(familia), date_updated: '1' });
 const IDS = ['TESTE-5', 'TESTE-19', 'TESTE-DUP', 'TESTE-OUTRA', 'TESTE-ENC', 'TESTE-COD', 'TESTE-CRIA', 'TESTE-NCM', 'TESTE-NOTA', 'TESTE-AUTO1', 'TESTE-AUTO2', 'TESTE-AUTO3', 'TESTE-AUTO4', 'TESTE-AUTO5', 'TESTE-ALT', 'TESTE-FAM', 'TESTE-REUSO', 'TESTE-NOME', 'TESTE-AUTOREUSO', 'TESTE-AUTOPAREC'];
-const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO CRIACAO%' OR descricao LIKE 'PRODUTO FICTICIO REUSO%' OR codigo = '7009901'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902', '99997', '4009901', '4009902')`; await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`; await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`; await sql`DELETE FROM sync_meta WHERE chave LIKE 'busca_web_teste%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
+const limpar = async () => { await sql`DELETE FROM sync_meta WHERE chave LIKE 'auto_ultima_criacao_teste%'`; await sql`DELETE FROM cadastros WHERE descricao LIKE 'PRODUTO FICTICIO%' OR codigo IN ('7009901', '4009901')`; await sql`DELETE FROM renomeacoes WHERE codigo LIKE '99900%'`; await sql`DELETE FROM omie_produtos WHERE codigo IN ('7009901', '99998', '7009902', '99997', '4009901', '4009902', '9990001', '9990002')`; await sql`DELETE FROM correcoes_cadastro WHERE codigo = '99997'`; await sql`DELETE FROM nomes_ia_cache WHERE resultado->>'nome_original' LIKE 'TESTE NOME SUJO%'`; await sql`DELETE FROM sync_meta WHERE chave LIKE 'busca_web_teste%'`; await sql`DELETE FROM solicitacoes WHERE clickup_task_id = ANY(${IDS})`; await sql`DELETE FROM clickup_eventos WHERE task_id = ANY(${IDS})`; await sql`DELETE FROM solicitacoes_log WHERE usuario = ${usuario.email}`; };
 await limpar();
 const ok = (m) => console.log('  ✓', m);
 
@@ -251,7 +252,7 @@ try {
   assert.equal(depois.criadas, 1);
   s = await detalharSolicitacao(sql, a4.id); assert.ok(['na_fila', 'processando'].includes(s.status));
   ok('intervalo entre solicitações e limite por dia são respeitados (uma por rodada)');
-  await sql`DELETE FROM sync_meta WHERE chave = 'auto_ultima_criacao_teste'`;
+  await sql`DELETE FROM sync_meta WHERE chave LIKE 'auto_ultima_criacao_teste%'`;
   console.log('Alteração de nome / ativar códigos ficam em "Outras tarefas"');
   const alt = await receberTarefa(sql, tarefa('TESTE-ALT', 'Alteração de nome Mães 2027 TESTE', 'PRODUTO ANTIGO A\nPRODUTO ANTIGO B', 'INTERNO(400)'), { origem: 'teste' });
   s = await detalharSolicitacao(sql, alt.id); assert.equal(s.rota, 'alteracao'); assert.equal(s.sugestao, 'analise');
@@ -406,6 +407,49 @@ try {
     const { linhaDoComentario } = await import('../api/_lib/solicitacoes.js');
     assert.ok(linhaDoComentario({ codigo_gerado: '8000001', descricao: s.itens[0].descricao, nome_original: s.itens[0].nome_original, acao: null }).includes('[nome na nota: TESTE NOME SUJO S40 SUPREMA 3GR BIANCA]'));
     ok('a IA sugere com fonte e confiança, não troca sozinha, usa cache, respeita o limite diário e o nome da nota fica guardado');
+  }
+  console.log('Renomear códigos (Omie e Nexaas SIMULADOS; nada real é alterado)');
+  {
+    await sql`INSERT INTO omie_produtos (codigo, descricao, descricao_norm, codigo_produto, inativo) VALUES ('9990001', 'PRODUTO TESTE NOME VELHO', 'PRODUTO TESTE NOME VELHO', 7001, false), ('9990002', 'PRODUTO TESTE SEM NEXAAS', 'PRODUTO TESTE SEM NEXAAS', 7002, false)`;
+    const omie = { 9990001: { codigo_produto: 7001, codigo: '9990001', descricao: 'PRODUTO TESTE NOME VELHO', unidade: 'UN', ncm: '84198190', valor_unitario: 0, inativo: 'N' }, 9990002: { codigo_produto: 7002, codigo: '9990002', descricao: 'PRODUTO TESTE SEM NEXAAS', unidade: 'UN', ncm: '84198190', valor_unitario: 0, inativo: 'N' } };
+    const nexaas = { 9990001: { id: 501, nome: 'PRODUTO TESTE NOME VELHO' } };
+    const chamadas = [];
+    const consultar = async (f) => ({ ...(omie[f.codigo] || Object.values(omie).find((o) => o.codigo_produto === f.codigo_produto) || {}) });
+    const sku = async (c) => (nexaas[c] ? { product_id: nexaas[c].id, name: c + ' - ' + nexaas[c].nome } : null);
+    const produtoNexaas = async (id) => ({ id, name: Object.values(nexaas).find((n) => n.id === Number(id)).nome });
+    const alterar = async (c) => { chamadas.push(['omie', c.descricao]); omie[c.codigo].descricao = c.descricao; };
+    const renomearNexaas = async (id, nome) => { chamadas.push(['nexaas', nome]); Object.values(nexaas).find((n) => n.id === Number(id)).nome = nome; };
+    const lerDeps = { consultar, sku, produtoNexaas };
+    const texto = '9990001; Produto Teste Nome Novo\n9990002\tProduto Teste Sem Nexaas Novo\n9990003; NAO EXISTE\nlixo';
+    const prev = await proporRenomeacoes(sql, usuario, texto, { ...lerDeps, consultar: async (f) => (f.codigo === '9990003' ? null : consultar(f)) });
+    assert.deepEqual(prev.linhas.map((l) => l.estado), ['proposta', 'proposta', 'invalida', 'invalida']);
+    assert.ok(prev.linhas[1].avisos.some((a) => a.includes('Não existe no Nexaas')));
+    assert.equal(chamadas.length, 0); // propor é só leitura
+    const ids = prev.linhas.filter((l) => l.estado === 'proposta').map((l) => l.id);
+    const repetida = await proporRenomeacoes(sql, usuario, '9990001; Outro Nome', lerDeps);
+    assert.equal(repetida.linhas[0].estado, 'invalida'); assert.match(repetida.linhas[0].avisos[0], /em aberto/);
+    delete process.env.RENOMEAR_ATIVO;
+    await assert.rejects(() => aplicarRenomeacoes(sql, usuario, ids, { ...lerDeps, alterar, renomearNexaas }), /desligada/);
+    process.env.RENOMEAR_ATIVO = '1';
+    try {
+      // O Nexaas falha uma vez: o passo do Omie não repete.
+      let falhou = false;
+      const nexaasFalha = async (id, nome) => { if (!falhou) { falhou = true; throw new Error('Nexaas fora do ar'); } return renomearNexaas(id, nome); };
+      const r1 = await aplicarRenomeacoes(sql, usuario, ids, { ...lerDeps, alterar, renomearNexaas: nexaasFalha });
+      assert.deepEqual(r1.map((x) => x.estado), ['erro', 'aplicada']); assert.match(r1[0].erro, /fora do ar/);
+      assert.equal(chamadas.filter((c) => c[0] === 'omie').length, 2);
+      const r2 = await aplicarRenomeacoes(sql, usuario, ids, { ...lerDeps, alterar, renomearNexaas: nexaasFalha });
+      assert.deepEqual(r2.map((x) => x.estado), ['aplicada', 'aplicada'], JSON.stringify(r2));
+      assert.equal(chamadas.filter((c) => c[0] === 'omie').length, 2); // o Omie não repetiu
+      assert.equal(chamadas.filter((c) => c[0] === 'nexaas').length, 1);
+      assert.equal(nexaas[9990001].nome, 'PRODUTO TESTE NOME NOVO');
+      const [esp] = await sql`SELECT descricao FROM omie_produtos WHERE codigo = '9990001'`; assert.equal(esp.descricao, 'PRODUTO TESTE NOME NOVO');
+      const des = await desfazerRenomeacao(sql, usuario, ids[0], { alterar, renomearNexaas });
+      assert.equal(des.estado, 'desfeita'); assert.equal(omie[9990001].descricao, 'PRODUTO TESTE NOME VELHO'); assert.equal(nexaas[9990001].nome, 'PRODUTO TESTE NOME VELHO');
+      const [volta] = await sql`SELECT descricao FROM omie_produtos WHERE codigo = '9990001'`; assert.equal(volta.descricao, 'PRODUTO TESTE NOME VELHO');
+      const [aud] = await sql`SELECT aprovado_por, desfeito_por FROM renomeacoes WHERE id = ${ids[0]}`; assert.equal(aud.aprovado_por, usuario.email); assert.equal(aud.desfeito_por, usuario.email);
+    } finally { delete process.env.RENOMEAR_ATIVO; }
+    ok('renomear: propor só lê e acusa problemas; desligado não altera; o Omie roda uma vez e o Nexaas pode ser repetido; sem Nexaas altera só o Omie; desfazer devolve os dois; auditoria');
   }
   console.log('\nTUDO OK');
 } catch (erro) {

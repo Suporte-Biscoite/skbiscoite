@@ -89,7 +89,7 @@ export async function processarFilaAutomatica(sql = sqlPadrao, { ia, lerNota, av
   }
 
   const candidatas = await sql`SELECT id, hash_conteudo FROM solicitacoes WHERE status = 'aguardando_analise' AND sugestao = 'automatica' AND rota = 'criar' AND editado = false
-    AND origem IN ('clickup', 'teste') AND auto_hash IS DISTINCT FROM hash_conteudo AND (${config.modo === 'automatico'} OR auto_hash IS DISTINCT FROM ('sim:' || hash_conteudo)) AND (${ids}::bigint[] IS NULL OR id = ANY(${ids}::bigint[])) ORDER BY recebido_em LIMIT 5`;
+    AND (origem = 'clickup' OR (origem = 'teste' AND ${ids}::bigint[] IS NOT NULL)) AND auto_hash IS DISTINCT FROM hash_conteudo AND (${config.modo === 'automatico'} OR auto_hash IS DISTINCT FROM ('sim:' || hash_conteudo)) AND (${ids}::bigint[] IS NULL OR id = ANY(${ids}::bigint[])) ORDER BY recebido_em LIMIT 5`;
   for (const c of candidatas) {
     if (config.modo === 'automatico') {
       const ultima = (await lerEstado(sql, chaveUltima))?.em ?? 0;
