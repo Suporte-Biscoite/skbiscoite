@@ -114,6 +114,23 @@ export function garantirEsquema(sql = sqlPadrao) {
       criado_por text, criado_em timestamptz NOT NULL DEFAULT now(),
       aprovado_por text, aprovado_em timestamptz, aplicado_em timestamptz,
       desfeito_por text, desfeito_em timestamptz, erro text)`;
+    // Renomear códigos (nome no Omie e no Nexaas): uma linha por código, com o estado de antes para desfazer.
+    await sql`CREATE TABLE IF NOT EXISTS renomeacoes (
+      id bigserial PRIMARY KEY,
+      lote uuid NOT NULL,
+      codigo text NOT NULL,
+      codigo_produto bigint,
+      nexaas_product_id bigint,
+      nome_novo text NOT NULL,
+      estado text NOT NULL DEFAULT 'proposta',
+      antes jsonb NOT NULL DEFAULT '{}'::jsonb,
+      nexaas_antes jsonb NOT NULL DEFAULT '{}'::jsonb,
+      nexaas_depois jsonb NOT NULL DEFAULT '{}'::jsonb,
+      avisos jsonb NOT NULL DEFAULT '[]'::jsonb,
+      passos jsonb NOT NULL DEFAULT '{}'::jsonb,
+      criado_por text, criado_em timestamptz NOT NULL DEFAULT now(),
+      aprovado_por text, aprovado_em timestamptz, aplicado_em timestamptz,
+      desfeito_por text, desfeito_em timestamptz, erro text)`;
     // Nome sujo: sugestão da IA por item e cache das pesquisas.
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS nome_ia jsonb`;
     await sql`ALTER TABLE solicitacao_itens ADD COLUMN IF NOT EXISTS nome_original text`;

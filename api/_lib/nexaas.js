@@ -74,3 +74,8 @@ export async function buscarSkuNexaas(codigo) {
 }
 
 export const criarProdutoNexaas = (corpo) => chamarNexaas('POST', '/products', corpo);
+
+// Renomear: lê o produto (nome do produto, não o do SKU) e troca o nome. O corpo segue o mesmo envelope { product: {...} } da criação.
+// ATENÇÃO: o PUT ainda não foi confirmado em produção; por isso o módulo "Renomear códigos" fica desligado até um teste com produto de teste.
+export const lerProdutoNexaas = async (productId) => (await chamarNexaas('GET', `/products/${encodeURIComponent(productId)}`)).product || null;
+export const renomearProdutoNexaas = (productId, nome) => chamarNexaas('PUT', `/products/${encodeURIComponent(productId)}`, { product: { name: nome } });

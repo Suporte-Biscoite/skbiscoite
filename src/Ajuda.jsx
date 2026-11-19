@@ -13,6 +13,7 @@ export default function Ajuda({ ehTI }) {
           <li><strong>Gerador Individual:</strong> um produto só. Digite o nome, escolha a família e crie.</li>
           <li><strong>Importação em Massa:</strong> vários produtos de uma planilha.</li>
           <li><strong>Importar do Omie:</strong> o produto já existe no Omie e só falta levá-lo para o Nexaas.</li>
+          {ehTI && <li><strong>Renomear códigos:</strong> troca o nome de produtos já cadastrados, no Omie e depois no Nexaas, com prévia, aprovação e botão Desfazer. Só o nome muda.</li>}
           {ehTI && <li><strong>Solicitações:</strong> pedidos que chegam do formulário do ClickUp. É a tela que mais precisa de revisão (explicada abaixo).</li>}
           <li><strong>Histórico &amp; Auditoria:</strong> tudo o que já foi criado, com data e quem fez.</li>
         </ul>
